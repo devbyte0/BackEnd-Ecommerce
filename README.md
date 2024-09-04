@@ -1,6 +1,6 @@
 # BackEnd-test
 
-Ypu must have Postman to use the (//name:
+You must have Postman to use the (//name:
 //description:
 //price:
 //catagories:
