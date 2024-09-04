@@ -6,7 +6,7 @@ You must have Postman to use the (//name:
 //catagories:
 //brand:
 //stock:
-//image:) folloing commands they can be used in buld edit in form.
+//image:) following commands they can be used in buld edit in form.
 
 npm run dev
 to start the server
