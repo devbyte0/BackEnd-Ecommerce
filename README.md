@@ -8,6 +8,7 @@ You must have Postman to use the (//name:
 //stock:
 //image:) following commands they can be used in bulk edit in body:form.
 
+
 npm run dev
 to start the server
 
