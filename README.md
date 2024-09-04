@@ -85,11 +85,11 @@ to update produts image
 
 localhost:3000/api/updateusers/66d8688622c8d9e42026d86f
 
-//firstName:Reza
-//lastName:Tahseen
-//email:rezatahseenfiverr@gmail.com
-//userName:rezatahseen
-//password:potolkumer
+//firstName
+//lastName
+//email
+//userName
+//password
 
 to update a user
 
