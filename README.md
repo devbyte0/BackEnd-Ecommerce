@@ -103,7 +103,7 @@ to delete a product
 
 #User:
 
-localhost:3000/api/deleteusers/
+localhost:3000/api/deleteusers/id
 
 to delete a user
 
