@@ -54,8 +54,9 @@ localhost:3000/api/createusers
 //firstName:
 //lastName:
 //email:
-//userName:rezatahseem
+//userName:
 //password:
+//image:
 
 to add a user
 
@@ -63,7 +64,7 @@ to add a user
 
 #Product:
 
-localhost:3000/api/updateproducts/66d5fde3a55458b5bb454d17
+localhost:3000/api/updateproducts/id
 
 //name:
 //description:
@@ -71,26 +72,20 @@ localhost:3000/api/updateproducts/66d5fde3a55458b5bb454d17
 //catagories:
 //brand:
 //stock:
+//image:
 
 to update a product
 
-localhost:3000/api/updateproducts/image/66d5fde3a55458b5bb454d17
-
-
-//image:
-
-
-to update produts image
-
 #User:
 
-localhost:3000/api/updateusers/66d8688622c8d9e42026d86f
+localhost:3000/api/updateusers/id
 
 //firstName
 //lastName
 //email
 //userName
 //password
+//image:
 
 to update a user
 
