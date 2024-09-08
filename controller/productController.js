@@ -31,11 +31,18 @@ exports.putSingleProduct = async(req,res)=>{
 
         const {name,description,price,catagories,brand,stock} = req.body
 
-        const searchUserName = await User.findOne({name:name})
+        const trimmedName = name ? name.trim().toLowerCase() : null;
+
+        const searchUserName = await User.findOne({name:trimmedName})
 
         const update = {}
 
-        if(name) update.name = name;
+        if(!searchUserName){
+            if(name) update.name = name;
+        }
+        else{
+            return res.status(404).json({message:` ${name} named product already exsists`})
+        }
         if(description) update.description = description;
         if(price) update.price = price;
         if(catagories) update.catagories = catagories;
@@ -85,20 +92,28 @@ exports.CreateProducts = async(req,res)=>{
     try {
         const {name,description,price,catagories,brand,stock} = req.body
 
-        const product = new Product({
-            name,
-            description,
-            price,
-            catagories,
-            brand,
-            stock,
-            imageUrl: req.file.path,
-        })
+        const trimmedName = name ? name.trim().toLowerCase() : null;
 
-        await product.save();
+        const searchUserName = await User.findOne({name:trimmedName})
 
-        res.send(product)
-
+        if(!searchUserName){
+            const product = new Product({
+                name,
+                description,
+                price,
+                catagories,
+                brand,
+                stock,
+                imageUrl: req.file.path,
+            })
+    
+            await product.save();
+    
+            res.send(product)
+        }
+        else{
+            return res.status(404).json({message:` ${name} named product already exsists`})
+        }
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

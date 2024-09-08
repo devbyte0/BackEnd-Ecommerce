@@ -29,20 +29,24 @@ exports.getSingleUser = async (req, res)=>{
 exports.putSingleUser = async (req, res) => {
     try {
         const id = req.params.id;
+
         const { firstName, lastName, email, userName, password } = req.body;
+
+        const trimmedUserName = userName ? userName.trim().toLowerCase() : null;
+        const trimmedEmail = email ? email.trim() : null;
+
+        const searchUserName = await User.findOne({userName:trimmedUserName})
+
+        const searchUserEmail = await User.findOne({email:trimmedEmail})
         
-        const searchUserUserName = await User.findOne({userName:userName.trim().toLowerCase()})
-
-        const searchUserEmail = await User.findOne({email:email.trim()})
-
 
         const updates = {};
 
-        if(searchUserUserName && searchUserEmail){
+        if(searchUserName && searchUserEmail){
             return res.status(404).json({message:`${email} and ${userName} is already taken`})
         }
 
-        if(!searchUserUserName){
+        if(!searchUserName){
             if (userName) updates.userName = userName.trim().toLowerCase();
         }
         else{
@@ -109,11 +113,11 @@ exports.CreateUser = async(req,res)=>{
         const salt = bcrypt.genSaltSync(saltRounds);
         const hash = bcrypt.hashSync(password.trim(), salt);
         
-        const searchUserUserName = await User.findOne({userName:userName.trim().toLowerCase()})
+        const searchUserName = await User.findOne({userName:userName.trim().toLowerCase()})
 
         const searchUserEmail = await User.findOne({email:email.trim()})
 
-        if(!searchUserUserName && !searchUserEmail){
+        if(!searchUserName && !searchUserEmail){
             const user = new User({
                 firstName:firstName.trim().toUpperCase(),
                 lastName:lastName.trim().toUpperCase(),
@@ -128,7 +132,7 @@ exports.CreateUser = async(req,res)=>{
             res.send(user)
         }
         else{
-           return res.status(404).json({message:`${userName} or ${email} Is Already Taken`})
+           return res.status(404).json({message:`${userName.trim().toLowerCase()} or ${email.trim()} Is Already Taken`})
 
         }   
 
