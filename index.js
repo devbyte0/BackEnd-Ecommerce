@@ -5,15 +5,13 @@ const connectDB = require('./config/db');
 const colors = require('colors')
 const ProductRoutes = require('./routes/ProductRoutes')
 const UserRoutes = require("./routes/UserRouter")
-const bodyParser = require('body-parser');
+
 
 dotenv.config();
 
 connectDB();
 
-
-
-app.use(bodyParser.json());
+app.use(express.json());
 
 app.use("/api",ProductRoutes)
 

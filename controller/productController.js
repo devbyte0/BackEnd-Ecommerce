@@ -6,7 +6,7 @@ exports.getAllProducts = async(req,res)=>{
         res.send(product)
         
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 
 }
@@ -20,7 +20,7 @@ exports.getSingleProduct = async(req,res)=>{
         console.log(id)
         
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 
 };
@@ -31,18 +31,24 @@ exports.putSingleProduct = async(req,res)=>{
 
         const {name,description,price,catagories,brand,stock} = req.body
 
+        const searchUserName = await User.findOne({name:name})
+
+        const update = {}
+
+        if(name) update.name = name;
+        if(description) update.description = description;
+        if(price) update.price = price;
+        if(catagories) update.catagories = catagories;
+        if(brand) update.brand = brand;
+        if(stock) update.stock = stock;
+        if(req.file) update.imageUrl = req.file.path;
+
         console.log(price)
 
-        const product =  await Product.findByIdAndUpdate(id,{"$set":{name,
-            description,
-            price,
-            catagories,
-            brand,
-            stock,
-            }})
+        const product =  await Product.findByIdAndUpdate(id,update,{new:true})
 
         if(!product){
-            res.send("No Product Found")
+          return  res.status(404).json({message:"No Product Found"})
         }
 
         const updatedProduct = await Product.findById(id)
@@ -51,32 +57,10 @@ exports.putSingleProduct = async(req,res)=>{
 
         
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 
 };
-
-exports.putSingleImage = async(req,res)=>{
-    try {
-        const id = req.params.id;
-
-        const product =  await Product.findByIdAndUpdate(id,{"$set":{imageUrl:req.file.path}})
-
-        if(!product){
-            res.send("No Product Found")
-        }
-
-        const updatedProduct = await Product.findById(id)
-          
-        res.send(updatedProduct)
-
-        
-    } catch (error) {
-        res.send(error)
-    }
-
-};
-
 
 exports.deleteSingleProduct = async(req,res)=>{
     try {
@@ -85,13 +69,13 @@ exports.deleteSingleProduct = async(req,res)=>{
         const product =  await Product.findByIdAndDelete(id)
 
         if(!product){
-            res.send("No Product Found")
+           return res.status(404).json("No Product Found")
         }
 
         res.send("Deleted")
 
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 
 };
@@ -116,6 +100,6 @@ exports.CreateProducts = async(req,res)=>{
         res.send(product)
 
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 }

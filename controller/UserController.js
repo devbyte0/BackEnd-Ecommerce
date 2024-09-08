@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const saltRounds = 16;
+const saltRounds = 10;
 const User = require("../models/User")
 
 exports.getAllUsers = async(req,res)=>{
@@ -8,57 +8,76 @@ exports.getAllUsers = async(req,res)=>{
         res.send(user)
         
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 
 }
 
 
-exports.getSingleUser = async(req,res)=>{
+exports.getSingleUser = async (req, res)=>{
     try {
         const id = req.params.id;
         const user = await User.findById(id)
         res.send(user)
         console.log(id)   
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 
 };
 
-
-
-exports.putSingleUser = async(req,res)=>{
+exports.putSingleUser = async (req, res) => {
     try {
         const id = req.params.id;
-
         const { firstName, lastName, email, userName, password } = req.body;
-
-        console.log(userName)
-
-        const salt = bcrypt.genSaltSync(saltRounds);
-        const hash = bcrypt.hashSync(password.trim(), salt);
         
-            const user =  await User.findByIdAndUpdate(id,{"$set":{"firstName":firstName.trim().toUpperCase(),
-                "lastName":lastName.trim().toUpperCase(),
-                "email":email.trim(),
-                "userName":userName.trim().toLowerCase(),
-                "password": hash,
-                "imageUrl": req.file.path}})
+        const searchUserUserName = await User.findOne({userName:userName.trim().toLowerCase()})
 
-                await user.save();
-    
-            if(!user){
-                res.send("No User Found")
-            }
+        const searchUserEmail = await User.findOne({email:email.trim()})
 
-            const updatedUser = await User.findById(id)
-              
-            res.send(updatedUser)
+
+        const updates = {};
+
+        if(searchUserUserName && searchUserEmail){
+            return res.status(404).json({message:`${email} and ${userName} is already taken`})
+        }
+
+        if(!searchUserUserName){
+            if (userName) updates.userName = userName.trim().toLowerCase();
+        }
+        else{
+           return res.status(404).json({message:`${userName.toLowerCase()} is already taken`})
+        }
+        if(!searchUserEmail){
+            
+            if (email) updates.email = email.trim();
+        }
+        else{
+           return res.status(404).json({message:`${email} is already taken`})
+        }
         
+        if (firstName) updates.firstName = firstName.trim().toUpperCase();
+
+        if (lastName) updates.lastName = lastName.trim().toUpperCase();
+
+        if (password) {
+            const salt = bcrypt.genSaltSync(10); // You can adjust the salt rounds
+            updates.password = bcrypt.hashSync(password.trim(), salt);
+        }
+
+        if(req.file) updates.imageUrl = req.file.path;
+
+        const user = await User.findByIdAndUpdate(id, updates, { new: true });
+        
+        if (!user) {
+            return res.status(404).json({ message: "No User Found" });
+        }
+
+        const updateduser = await User.findById(id)
+        res.send(updateduser);
 
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 };
 
@@ -77,7 +96,7 @@ exports.deleteSingleUser = async(req,res)=>{
         res.send("Deleted")
 
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 
 };
@@ -109,11 +128,11 @@ exports.CreateUser = async(req,res)=>{
             res.send(user)
         }
         else{
-            res.send("UserName or Email Is Already Taken")
+           return res.status(404).json({message:`${userName} or ${email} Is Already Taken`})
 
         }   
 
     } catch (error) {
-        res.send(error)
+        res.status(500).json({ error: error.message });
     }
 }
