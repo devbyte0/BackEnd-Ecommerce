@@ -33,11 +33,11 @@ exports.putSingleProduct = async(req,res)=>{
 
         const trimmedName = name ? name.trim().toLowerCase() : null;
 
-        const searchUserName = await User.findOne({name:trimmedName})
+        const searchName = await User.findOne({name:trimmedName})
 
         const update = {}
 
-        if(!searchUserName){
+        if(!searchName){
             if(name) update.name = name;
         }
         else{
@@ -94,9 +94,9 @@ exports.CreateProducts = async(req,res)=>{
 
         const trimmedName = name ? name.trim().toLowerCase() : null;
 
-        const searchUserName = await User.findOne({name:trimmedName})
+        const searchName = await User.findOne({name:trimmedName})
 
-        if(!searchUserName){
+        if(!searchName){
             const product = new Product({
                 name,
                 description,
