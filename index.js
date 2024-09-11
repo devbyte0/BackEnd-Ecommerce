@@ -5,7 +5,10 @@ const connectDB = require('./config/db');
 const colors = require('colors')
 const ProductRoutes = require('./routes/ProductRoutes')
 const UserRoutes = require("./routes/UserRouter")
+const ImageSliderRoutes = require("./routes/SlidersRoute")
+const cors = require('cors')
 
+app.use(cors())
 
 dotenv.config();
 
@@ -16,6 +19,8 @@ app.use(express.json());
 app.use("/api",ProductRoutes)
 
 app.use("/api",UserRoutes)
+
+app.use("/api",ImageSliderRoutes)
 
 const PORT = process.env.PORT || 5000
 

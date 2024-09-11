@@ -1,9 +1,9 @@
-const Product = require('../models/Product.js')
+const SliderImages = require('../models/SliderImages')
 
-exports.getAllProducts = async(req,res)=>{
+exports.getAllSlides = async(req,res)=>{
     try {
-        const product = await Product.find();
-        res.send(product)
+        const sliderimages = await SliderImages.find();
+        res.send(sliderimages)
         
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -12,11 +12,11 @@ exports.getAllProducts = async(req,res)=>{
 }
 
 
-exports.getSingleProduct = async(req,res)=>{
+exports.getSingleSlide = async(req,res)=>{
     try {
         const id = req.params.id;
-        const product = await Product.findById(id)
-        res.send(product)
+        const sliderimages = await SliderImages.findById(id)
+        res.send(sliderimages)
         console.log(id)
         
     } catch (error) {
@@ -25,15 +25,15 @@ exports.getSingleProduct = async(req,res)=>{
 
 };
 
-exports.putSingleProduct = async(req,res)=>{
+exports.putSingleSlide = async(req,res)=>{
     try {
         const id = req.params.id;
 
-        const {name,description,price,catagories,brand,stock} = req.body
+        const {name,price,brand} = req.body
 
         const trimmedName = name ? name.trim().toLowerCase() : null;
 
-        const searchName = await Product.findOne({name:trimmedName})
+        const searchName = await SliderImages.findOne({name:trimmedName})
 
         const update = {}
 
@@ -43,24 +43,23 @@ exports.putSingleProduct = async(req,res)=>{
         else{
             return res.status(404).json({message:` ${name} named product already exsists`})
         }
-        if(description) update.description = description;
+        
         if(price) update.price = price;
-        if(catagories) update.catagories = catagories;
+        
         if(brand) update.brand = brand;
-        if(stock) update.stock = stock;
+
         if(req.file) update.imageUrl = req.file.path;
 
-        console.log(price)
 
-        const product =  await Product.findByIdAndUpdate(id,update,{new:true})
+        const sliderimages =  await SliderImages.findByIdAndUpdate(id,update,{new:true})
 
-        if(!product){
+        if(!sliderimages){
           return  res.status(404).json({message:"No Product Found"})
         }
 
-        const updatedProduct = await Product.findById(id)
+        const updatedsliderimages = await SliderImages.findById(id)
           
-        res.send(updatedProduct)
+        res.send(updatedsliderimages)
 
         
     } catch (error) {
@@ -69,13 +68,13 @@ exports.putSingleProduct = async(req,res)=>{
 
 };
 
-exports.deleteSingleProduct = async(req,res)=>{
+exports.deleteSingleSlide = async(req,res)=>{
     try {
         const id = req.params.id;
 
-        const product =  await Product.findByIdAndDelete(id)
+        const sliderimages =  await SliderImages.findByIdAndDelete(id)
 
-        if(!product){
+        if(!sliderimages){
            return res.status(404).json("No Product Found")
         }
 
@@ -88,28 +87,25 @@ exports.deleteSingleProduct = async(req,res)=>{
 };
 
 
-exports.CreateProducts = async(req,res)=>{
+exports.CreateSlides = async(req,res)=>{
     try {
-        const {name,description,price,catagories,brand,stock} = req.body
+        const {name,price,brand} = req.body
 
         const trimmedName = name ? name.trim().toLowerCase() : null;
 
-        const searchName = await Product.findOne({name:trimmedName})
+        const searchName = await SliderImages.findOne({name:trimmedName})
 
         if(!searchName){
-            const product = new Product({
+            const sliderimages = new SliderImages({
                 name,
-                description,
                 price,
-                catagories,
                 brand,
-                stock,
                 imageUrl: req.file.path,
             })
     
-            await product.save();
+            await sliderimages.save();
     
-            res.send(product)
+            res.send(sliderimages)
         }
         else{
             return res.status(404).json({message:` ${name} named product already exsists`})
