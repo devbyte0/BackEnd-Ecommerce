@@ -1,11 +1,11 @@
 const bcrypt = require('bcrypt');
 const saltRounds = 10;
-const User = require("../models/User")
+const Admin = require("../models/Admin")
 
-exports.getAllUsers = async(req,res)=>{
+exports.getAllAdmins = async(req,res)=>{
     try {
-        const user = await User.find();
-        res.send(user)
+        const admin = await Admin.find();
+        res.send(admin)
         
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -14,29 +14,29 @@ exports.getAllUsers = async(req,res)=>{
 }
 
 
-exports.getSingleUser = async (req, res)=>{
+exports.getSingleAdmin = async (req, res)=>{
     try {
         const id = req.params.id;
-        const user = await User.findById(id)
-        res.send(user)  
+        const admin = await Admin.findById(id)
+        res.send(admin)   
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 
 };
 
-exports.putSingleUser = async (req, res) => {
+exports.putSingleAdmin = async (req, res) => {
     try {
         const id = req.params.id;
 
-        const { firstName, lastName, email, userName, password } = req.body;
+        const { firstName, lastName, email, userName, password ,superAdmin} = req.body;
 
         const trimmedUserName = userName ? userName.trim().toLowerCase() : null;
         const trimmedEmail = email ? email.trim() : null;
 
-        const searchUserName = await User.findOne({userName:trimmedUserName})
+        const searchUserName = await Admin.findOne({userName:trimmedUserName})
 
-        const searchUserEmail = await User.findOne({email:trimmedEmail})
+        const searchUserEmail = await Admin.findOne({email:trimmedEmail})
         
 
         const updates = {};
@@ -70,14 +70,16 @@ exports.putSingleUser = async (req, res) => {
 
         if(req.file) updates.imageUrl = req.file.path;
 
-        const user = await User.findByIdAndUpdate(id, updates, { new: true });
+        if(superAdmin) updates.superAdmin = superAdmin;
+
+        const admin = await Admin.findByIdAndUpdate(id, updates, { new: true });
         
-        if (!user) {
+        if (!admin) {
             return res.status(404).json({ message: "No User Found" });
         }
 
-        const updateduser = await User.findById(id)
-        res.send(updateduser);
+        const updatedAdmin = await Admin.findById(id)
+        res.send(updatedAdmin);
 
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -86,16 +88,22 @@ exports.putSingleUser = async (req, res) => {
 
 
 
-exports.deleteSingleUser = async(req,res)=>{
+exports.deleteSingleAdmin = async(req,res)=>{
     try {
         const id = req.params.id;
 
-        const user =  await User.findByIdAndDelete(id)
+        const searchSuperAdmin = await Admin.findOne({superAdmin:true})
 
-        if(!user){
-            res.send("No User Found")
+        if(!searchSuperAdmin){
+            const admin =  await Admin.findByIdAndDelete(id)
+
+            if(!admin){
+                res.send("No User Found")
+            }
         }
-
+        else{
+            return res.status(404).json({message:`${searchSuperAdmin.userName} is the super Admin`})
+        }
         res.send("Deleted")
 
     } catch (error) {
@@ -105,30 +113,31 @@ exports.deleteSingleUser = async(req,res)=>{
 };
 
 
-exports.CreateUser = async(req,res)=>{
+exports.CreateAdmins = async(req,res)=>{
     try {
-        const {firstName,lastName,email,userName,password} = req.body
+        const { firstName, lastName, email, userName, password ,superAdmin} = req.body;
 
         const salt = bcrypt.genSaltSync(saltRounds);
         const hash = bcrypt.hashSync(password.trim(), salt);
         
-        const searchUserName = await User.findOne({userName:userName.trim().toLowerCase()})
+        const searchUserName = await Admin.findOne({userName:userName.trim().toLowerCase()})
 
-        const searchUserEmail = await User.findOne({email:email.trim()})
+        const searchUserEmail = await Admin.findOne({email:email.trim()})
 
         if(!searchUserName && !searchUserEmail){
-            const user = new User({
+            const admin = new Admin({
                 firstName:firstName.trim().toUpperCase(),
                 lastName:lastName.trim().toUpperCase(),
                 email:email.trim(),
                 userName:userName.trim().toLowerCase(),
                 password: hash,
                 imageUrl: req.file.path,
+                superAdmin
             })
     
-            await user.save();
+            await admin.save();
     
-            res.send(user)
+            res.send(admin)
         }
         else{
            return res.status(404).json({message:`${userName.trim().toLowerCase()} or ${email.trim()} Is Already Taken`})
