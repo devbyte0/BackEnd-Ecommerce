@@ -12,6 +12,9 @@ const cartSchema = new mongoose.Schema({
     CartProductCard:{
         type:Array,
         required:true
+    },
+    totalPrice:{
+        type:Number
     }
 },{timestamps:true})
 
