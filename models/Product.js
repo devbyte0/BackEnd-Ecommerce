@@ -15,7 +15,7 @@ const productSchema = new mongoose.Schema({
     },
     catagories:{
         type:String,
-        default:"Uncatagoriesed"
+        
     },
     brand:{
         type:String,

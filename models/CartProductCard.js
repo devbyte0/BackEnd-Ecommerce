@@ -1,8 +1,8 @@
 const mongoose = require('mongoose')
 
 const cartproductcardSchema = new mongoose.Schema({
-    productId:{
-        type:mongoose.ObjectId,
+    userId:{
+        type:String,
         required:true   
     },
     name:{
@@ -13,18 +13,12 @@ const cartproductcardSchema = new mongoose.Schema({
         type:Number,
         required:true
     },
-    catagories:{
-        type:String,
-        default:"Uncatagoriesed"
+    updatedPrice:{
+        type:Number
     },
     brand:{
         type:String,
         default:"No Brand Name"
-    },
-    stock:{
-        type:Number,
-        required:true,
-        default:0
     },
     imageUrl:{
         type:String,
@@ -34,7 +28,7 @@ const cartproductcardSchema = new mongoose.Schema({
         type:Number,
         default:1
     }
-})
+},{timestamps:true})
 
 
 module.exports = mongoose.model("cartproductcard",cartproductcardSchema)
