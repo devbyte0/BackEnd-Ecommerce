@@ -78,6 +78,7 @@ exports.deleteSingleProductInCart = async(req,res)=>{
 
         // Remove the product from the cart array
         existingCart.CartProductCard.splice(productIndex, 1);
+        //For the sum of total
         const total = existingCart.CartProductCard.reduce((sum, cartProduct) => {
             return sum + cartProduct.updatedPrice;
         }, 0);
