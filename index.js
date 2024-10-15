@@ -8,6 +8,7 @@ const UserRoutes = require("./routes/UserRouter")
 const ImageSliderRoutes = require("./routes/SlidersRoute")
 const AdminRoutes = require("./routes/AdminRoutes")
 const CartRoutes = require("./routes/CartRoutes")
+const CategoriesRoute = require('./routes/CategoriesRoutes')
 const cors = require('cors')
 
 app.use(cors())
@@ -27,6 +28,8 @@ app.use("/api",ImageSliderRoutes)
 app.use("/api",AdminRoutes)
 
 app.use("/api",CartRoutes)
+
+app.use("/api",CategoriesRoute)
 
 const PORT = process.env.PORT || 5000
 

@@ -5,6 +5,7 @@ const upload = require("../config/multerconfig")
 
 router.get("/products",ProductController.getAllProducts);
 
+
 router.get("/products/:id",ProductController.getSingleProduct);
 
 router.post("/createproducts", upload.single('image') , ProductController.CreateProducts);

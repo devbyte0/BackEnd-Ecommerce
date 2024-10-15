@@ -25,6 +25,7 @@ exports.getSingleProduct = async(req,res)=>{
 
 };
 
+
 exports.putSingleProduct = async(req,res)=>{
     try {
         const id = req.params.id;
