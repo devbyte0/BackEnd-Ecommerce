@@ -9,7 +9,7 @@ const Category = require('../models/Categories');
 const getCategories = async (req, res) => {
     try {
         const categories = await Category.find().sort({ name: 1 }); // Sort alphabetically by name
-        res.status(200).json(categories);
+        res.send(categories);
     } catch (error) {
         console.error("Error fetching categories:", error);
         res.status(500).json({ message: "Server Error: Unable to fetch categories." });
@@ -64,7 +64,7 @@ const createCategory = async (req, res) => {
         const newCategory = new Category({ name: name.trim() });
         const savedCategory = await newCategory.save();
 
-        res.status(201).json(savedCategory);
+        res.send(savedCategory);
     } catch (error) {
         console.error("Error creating category:", error);
         res.status(500).json({ message: "Server Error: Unable to create category." });
@@ -101,7 +101,7 @@ const updateCategory = async (req, res) => {
         category.name = name.trim();
         const updatedCategory = await category.save();
 
-        res.status(200).json(updatedCategory);
+        res.send(updatedCategory);
     } catch (error) {
         console.error(`Error updating category with ID ${id}:`, error);
         if (error.kind === 'ObjectId') {

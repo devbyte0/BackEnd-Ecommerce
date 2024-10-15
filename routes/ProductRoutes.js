@@ -1,17 +1,11 @@
-const express = require("express")
+const express = require('express');
 const router = express.Router();
-const ProductController = require('../controller/productController')
-const upload = require("../config/multerconfig")
+const upload = require('../config/multerconfig');
+const { addProduct, getProducts, updateProduct, deleteProduct } = require('../controller/productController');
 
-router.get("/products",ProductController.getAllProducts);
-
-
-router.get("/products/:id",ProductController.getSingleProduct);
-
-router.post("/createproducts", upload.single('image') , ProductController.CreateProducts);
-
-router.put("/updateproducts/:id", upload.single('image'),ProductController.putSingleProduct);
-
-router.delete("/deleteproducts/:id",ProductController.deleteSingleProduct)
+router.post('/products', upload.array('images', 12), addProduct);
+router.get('/products', getProducts);
+router.put('/products/:id', upload.array('images', 12), updateProduct);
+router.delete('/products/:id', deleteProduct);
 
 module.exports = router;
