@@ -4,8 +4,13 @@ const Admin = require("../models/Admin")
 
 exports.getAllAdmins = async(req,res)=>{
     try {
-        const admin = await Admin.find();
-        res.send(admin)
+        const id = req.params.id;
+        const SuperAdmin = Admin.findById(id)
+        if(SuperAdmin.superAdmin === true){
+            const admin = await Admin.find();
+            res.send(admin)
+        }
+        res.send({Message:"sorry you are not a superAdmin"})
         
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -92,10 +97,12 @@ exports.deleteSingleAdmin = async(req,res)=>{
     try {
         const id = req.params.id;
 
+        const {deleteAdminId} = req.body
+
         const searchSuperAdmin = await Admin.findOne({superAdmin:true})
 
         if(!searchSuperAdmin){
-            const admin =  await Admin.findByIdAndDelete(id)
+            const admin =  await Admin.findByIdAndDelete(deleteAdminId)
 
             if(!admin){
                 res.send("No User Found")

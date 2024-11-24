@@ -1,141 +1,160 @@
-const bcrypt = require('bcrypt');
-const saltRounds = 10;
-const User = require("../models/User")
+// src/controllers/userController.js
+const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
-exports.getAllUsers = async(req,res)=>{
-    try {
-        const user = await User.find();
-        res.send(user)
-        
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+// Secret key for JWT (Store this in an environment variable in production)
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET; 
 
-}
-
-
-exports.getSingleUser = async (req, res)=>{
-    try {
-        const id = req.params.id;
-        const user = await User.findById(id)
-        res.send(user)  
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-
+const generateTokens = (userId) => {
+    const accessToken = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '1h' });
+    const refreshToken = jwt.sign({ userId }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+    return { accessToken, refreshToken };
 };
 
-exports.putSingleUser = async (req, res) => {
+// src/controllers/userController.js
+exports.refreshToken = async (req, res) => {
     try {
-        const id = req.params.id;
+        const { token } = req.body;
+        if (!token) return res.status(403).json({ message: 'Refresh token is required' });
 
+        // Verify the refresh token
+        const decoded = jwt.verify(token, JWT_REFRESH_SECRET);
+        if (!decoded) return res.status(403).json({ message: 'Invalid refresh token' });
+
+        // Generate new access token
+        const { accessToken } = generateTokens(decoded.userId);
+
+        res.json({ accessToken });
+    } catch (error) {
+        console.error("Error refreshing token:", error);
+        res.status(500).json({ message: 'Error refreshing token', error });
+    }
+};
+
+
+exports.register = async (req, res) => {
+    try {
         const { firstName, lastName, email, userName, password } = req.body;
 
-        const trimmedUserName = userName ? userName.trim().toLowerCase() : null;
-        const trimmedEmail = email ? email.trim() : null;
+        // Check if user exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) return res.status(400).json({ message: 'User already exists' });
 
-        const searchUserName = await User.findOne({userName:trimmedUserName})
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-        const searchUserEmail = await User.findOne({email:trimmedEmail})
-        
+        // Set default image URL
+        const profileImageUrl = `https://ui-avatars.com/api/?name=${firstName}+${lastName}`;
 
-        const updates = {};
+        // Create user
+        const user = await User.create({
+            firstName,
+            lastName,
+            email,
+            userName,
+            password: hashedPassword,
+            imageUrl: profileImageUrl,
+        });
 
-        if(searchUserName && searchUserEmail){
-            return res.status(404).json({message:`${email} and ${userName} is already taken`})
-        }
+        // Generate tokens
+        const { accessToken, refreshToken } = generateTokens(user._id);
 
-        if(!searchUserName){
-            if (userName) updates.userName = userName.trim().toLowerCase();
-        }
-        else{
-           return res.status(404).json({message:`${userName.toLowerCase()} is already taken`})
-        }
-        if(!searchUserEmail){
-            
-            if (email) updates.email = email.trim();
-        }
-        else{
-           return res.status(404).json({message:`${email} is already taken`})
-        }
-        
-        if (firstName) updates.firstName = firstName.trim().toUpperCase();
+        // Update user’s refresh token in database
+        user.refreshToken = refreshToken;
+        await user.save();
 
-        if (lastName) updates.lastName = lastName.trim().toUpperCase();
-
-        if (password) {
-            const salt = bcrypt.genSaltSync(10); // You can adjust the salt rounds
-            updates.password = bcrypt.hashSync(password.trim(), salt);
-        }
-
-        if(req.file) updates.imageUrl = req.file.path;
-
-        const user = await User.findByIdAndUpdate(id, updates, { new: true });
-        
-        if (!user) {
-            return res.status(404).json({ message: "No User Found" });
-        }
-
-        const updateduser = await User.findById(id)
-        res.send(updateduser);
-
+        res.status(201).json({ message: 'User registered successfully', accessToken, refreshToken, user });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ message: 'Error registering user', error });
+    }
+};
+
+// Login user
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // Find user by email
+        const user = await User.findOne({ email });
+        if (!user) return res.status(400).json({ message: 'User not found' });
+
+        // Check password
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+
+        // Generate new tokens
+        const { accessToken, refreshToken } = generateTokens(user._id);
+
+        // Update user’s refresh token in database
+        user.refreshToken = refreshToken;
+        await user.save();
+
+        res.json({ message: 'Login successful', accessToken, refreshToken, user });
+    } catch (error) {
+        console.error("Error logging in:", error);
+        res.status(500).json({ message: 'Error logging in', error });
     }
 };
 
 
-
-exports.deleteSingleUser = async(req,res)=>{
+// Update profile information
+exports.updateProfile = async (req, res) => {
     try {
-        const id = req.params.id;
+        const { userId } = req.params;
+        const updatedData = req.body;
 
-        const user =  await User.findByIdAndDelete(id)
+        const user = await User.findByIdAndUpdate(userId, updatedData, { new: true });
+        if (!user) return res.status(404).json({ message: 'User not found' });
 
-        if(!user){
-            res.send("No User Found")
-        }
-
-        res.send("Deleted")
-
+        res.json({ message: 'Profile updated successfully', user });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ message: 'Error updating profile', error });
     }
-
 };
 
-
-exports.CreateUser = async(req,res)=>{
+// Add or update address
+exports.updateAddress = async (req, res) => {
     try {
-        const {firstName,lastName,email,userName,password} = req.body
+        const { userId } = req.params;
+        const { address } = req.body;
 
-        const salt = bcrypt.genSaltSync(saltRounds);
-        const hash = bcrypt.hashSync(password.trim(), salt);
-        
-        const searchUserName = await User.findOne({userName:userName.trim().toLowerCase()})
+        const user = await User.findByIdAndUpdate(userId, { address }, { new: true });
+        if (!user) return res.status(404).json({ message: 'User not found' });
 
-        const searchUserEmail = await User.findOne({email:email.trim()})
-
-        if(!searchUserName && !searchUserEmail){
-            const user = new User({
-                firstName:firstName.trim().toUpperCase(),
-                lastName:lastName.trim().toUpperCase(),
-                email:email.trim(),
-                userName:userName.trim().toLowerCase(),
-                password: hash,
-                imageUrl: req.file.path,
-            })
-    
-            await user.save();
-    
-            res.send(user)
-        }
-        else{
-           return res.status(404).json({message:`${userName.trim().toLowerCase()} or ${email.trim()} Is Already Taken`})
-
-        }   
-
+        res.json({ message: 'Address updated successfully', user });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ message: 'Error updating address', error });
     }
-}
+};
+
+// Add or update payment method
+exports.updatePaymentMethod = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { paymentMethod } = req.body;
+
+        const user = await User.findByIdAndUpdate(userId, { paymentMethod }, { new: true });
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        res.json({ message: 'Payment method updated successfully', user });
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating payment method', error });
+    }
+};
+
+// Delete user
+exports.deleteUser = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        // Find and delete user by userId
+        const user = await User.findByIdAndDelete(userId);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        res.json({ message: 'User deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting user', error });
+    }
+};

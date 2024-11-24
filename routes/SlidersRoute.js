@@ -1,16 +1,12 @@
-const express = require("express")
+const express = require('express');
 const router = express.Router();
-const SliderImagesController = require('../controller/SliderImagesController')
-const upload = require("../config/multerconfig")
+const sliderController = require('../controller/SliderImagesController');
 
-router.get("/slides",SliderImagesController.getAllSlides);
 
-router.get("/slides/:id",SliderImagesController.getSingleSlide);
-
-router.post("/createslides", upload.single('image') , SliderImagesController.CreateSlides);
-
-router.put("/updateslides/:id", upload.single('image'),SliderImagesController.putSingleSlide);
-
-router.delete("/deleteslides/:id",SliderImagesController.deleteSingleSlide)
+// Routes
+router.post('/createslides',sliderController.createSlide);
+router.get('/slides', sliderController.getSlides);
+router.put('/updateslides/:id', sliderController.updateSlide);
+router.delete('/deleteslides/:id', sliderController.deleteSlide);
 
 module.exports = router;

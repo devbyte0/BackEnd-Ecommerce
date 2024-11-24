@@ -1,39 +1,106 @@
+// Import required modules
 const express = require('express');
-const app = express();
 const dotenv = require("dotenv");
 const connectDB = require('./config/db');
-const colors = require('colors')
-const ProductRoutes = require('./routes/ProductRoutes')
-const UserRoutes = require("./routes/UserRouter")
-const ImageSliderRoutes = require("./routes/SlidersRoute")
-const AdminRoutes = require("./routes/AdminRoutes")
-const CartRoutes = require("./routes/CartRoutes")
-const CategoriesRoute = require('./routes/CategoriesRoutes')
-const cors = require('cors')
+const colors = require('colors');
+const cors = require('cors');
+const http = require('http');
+const socketIO = require('socket.io');
 
-app.use(cors())
+// Import route files
+const ProductRoutes = require('./routes/ProductRoutes');
+const UserRoutes = require("./routes/UserRouter");
+const ImageSliderRoutes = require("./routes/SlidersRoute");
+const AdminRoutes = require("./routes/AdminRoutes");
+const CartRoutes = require("./routes/CartRoutes");
+const CategoriesRoute = require('./routes/CategoriesRoutes');
+const colorRoutes = require('./routes/colorRoutes');
+const categoryRoutes = require('./routes/CategoriesRoutes');
+const sizeRoutes = require('./routes/SizeRoutes');
+const genderRoutes = require('./routes/GenderRoutes');
+const badgeRoutes = require('./routes/BadgesRoutes');
+const couponRoutes = require('./routes/CouponRoutes');
+const relatedProductRoutes = require('./routes/RelatedProductRoutes');
 
+// Initialize environment and database connection
 dotenv.config();
-
 connectDB();
 
+// Initialize Express and HTTP server
+const app = express();
+const server = http.createServer(app);
+const io = socketIO(server, {
+    cors: {
+      origin: "http://localhost:5173", // Allow your frontend's origin
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
+  });
+
+// Middleware setup
+app.use(cors());
 app.use(express.json());
 
-app.use("/api",ProductRoutes)
+// Define routes
+app.use("/api", ProductRoutes);
+app.use("/api", UserRoutes);
+app.use("/api", ImageSliderRoutes);
+app.use("/api", AdminRoutes);
+app.use("/api", CartRoutes);
+app.use("/api", CategoriesRoute);
+app.use('/api', colorRoutes);
+app.use('/api', categoryRoutes);
+app.use('/api', sizeRoutes);
+app.use('/api', genderRoutes);
+app.use('/api', badgeRoutes);
+app.use('/api', couponRoutes);
+app.use('/api', relatedProductRoutes);
 
-app.use("/api",UserRoutes)
 
-app.use("/api",ImageSliderRoutes)
 
-app.use("/api",AdminRoutes)
+// Socket.io logic for real-time product viewing
+let viewers = {};
+function randomIntFromInterval(min, max) { // min and max included 
+    return Math.floor(Math.random() * (max - min + 1) + min);
+  }
+  
+  const rndInt = randomIntFromInterval(500, 1000);
+  console.log(rndInt)
 
-app.use("/api",CartRoutes)
+io.on('connection', (socket) => {
+  console.log( `A person connected` );
+  
+  socket.on('joinProduct', (productId) => {
+    socket.join(productId); // Join the product-specific room first
+  
+    // Increase the viewer count for this product
+    if (!viewers[productId]) {
+      viewers[productId] = rndInt;
+      
+    }
+    viewers[productId]++;
+  
+    // Emit viewer count update to the room
+    io.to(productId).emit('viewerCountUpdate', viewers[productId]);
+  
+    console.log(`User joined product: ${productId}, Viewers: ${viewers[productId]}`);
+  
+    // Handle user disconnecting
+    socket.on('disconnect', () => {
+        
+      if (viewers[productId]) {
+        viewers[productId] = Math.max(viewers[productId] - 1, 0); // Ensure viewer count doesn't go below 0
+        io.to(productId).emit('viewerCountUpdate', viewers[productId]);
+        console.log(`User disconnected from product: ${productId}, Viewers: ${viewers[productId]}`);
+      }
+    });
+  });
+  
+});
 
-app.use("/api",CategoriesRoute)
+// Server listening
+const PORT = process.env.PORT || 5000;
 
-const PORT = process.env.PORT || 5000
-
-app.listen(PORT, ()=>{
-    console.log(`server Running on port ${PORT}`.bgBlue)
-})
-
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`.bgBlue);
+});

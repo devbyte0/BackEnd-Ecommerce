@@ -1,22 +1,31 @@
-const mongoose = require('mongoose')
+const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
 const SliderImagesSchema = new mongoose.Schema({
-    name:{
-        type:String,
-        required:true
+    productId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Product'
     },
-    price:{
-        type:Number,
-        
+    name: {
+        type: String,
+        required: true
     },
-    brand:{
-        type:String,
-        default:"No Brand Name"
+    price: {
+        type: Number
     },
-    imageUrl:{
-        type:String,
-        required:true
+    discountPrice: {
+        type: Number
+    },
+    imageUrl: {
+        type: String,
+        required: true
+    },
+    mainBadgeName: {
+        type: String
+    },
+    mainBadgeColor: {
+        type: String
     }
-},{timestamps:true});
+}, { timestamps: true });
 
-module.exports = mongoose.model("sliderimages",SliderImagesSchema);
+module.exports = mongoose.model("SliderImages", SliderImagesSchema);

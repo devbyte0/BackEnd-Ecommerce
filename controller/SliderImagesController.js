@@ -1,116 +1,74 @@
-const SliderImages = require('../models/SliderImages')
+const SliderImage = require('../models/SliderImages');
 
-exports.getAllSlides = async(req,res)=>{
-    try {
-        const sliderimages = await SliderImages.find();
-        res.send(sliderimages)
-        
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-
-}
-
-
-exports.getSingleSlide = async(req,res)=>{
-    try {
-        const id = req.params.id;
-        const sliderimages = await SliderImages.findById(id)
-        res.send(sliderimages)
-        console.log(id)
-        
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-
+// Get all slides
+exports.getSlides = async (req, res) => {
+  try {
+    const slides = await SliderImage.find();
+    res.json(slides);
+  } catch (error) {
+    console.error("Error fetching slides:", error);
+    res.status(500).json({ message: 'Error fetching slides', error });
+  }
 };
 
-exports.putSingleSlide = async(req,res)=>{
-    try {
-        const id = req.params.id;
+// Create a new slide
+exports.createSlide = async (req, res) => {
+  const { name, price, discountPrice, imageUrl, productId, mainBadgeName, mainBadgeColor } = req.body;
 
-        const {name,price,brand} = req.body
+  if (!name || !price || !imageUrl || !productId || !mainBadgeName || !mainBadgeColor) {
+    return res.status(400).json({ message: "Name, price, image, and product ID are required." });
+  }
 
-        const trimmedName = name ? name.trim().toLowerCase() : null;
+  try {
+    const newSlide = new SliderImage({
+      productId,
+      name,
+      price,
+      discountPrice,
+      imageUrl,
+      mainBadgeName,
+      mainBadgeColor
+    });
 
-        const searchName = await SliderImages.findOne({name:trimmedName})
-
-        const update = {}
-
-        if(!searchName){
-            if(name) update.name = name;
-        }
-        else{
-            return res.status(404).json({message:` ${name} named product already exsists`})
-        }
-        
-        if(price) update.price = price;
-        
-        if(brand) update.brand = brand;
-
-        if(req.file) update.imageUrl = req.file.path;
-
-
-        const sliderimages =  await SliderImages.findByIdAndUpdate(id,update,{new:true})
-
-        if(!sliderimages){
-          return  res.status(404).json({message:"No Product Found"})
-        }
-
-        const updatedsliderimages = await SliderImages.findById(id)
-          
-        res.send(updatedsliderimages)
-
-        
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-
+    const savedSlide = await newSlide.save();
+    res.status(201).json(savedSlide);
+  } catch (error) {
+    console.error("Error creating slide:", error);
+    res.status(500).json({ message: "Failed to create slide.", error });
+  }
 };
 
-exports.deleteSingleSlide = async(req,res)=>{
-    try {
-        const id = req.params.id;
+// Update a slide
+exports.updateSlide = async (req, res) => {
+  const { id } = req.params;
+  const { name, price, discountPrice, imageUrl, productId, mainBadgeName, mainBadgeColor } = req.body;
 
-        const sliderimages =  await SliderImages.findByIdAndDelete(id)
+  try {
+    const updatedSlide = await SliderImage.findByIdAndUpdate(
+      id,
+      { productId, name, price, discountPrice, imageUrl, mainBadgeName, mainBadgeColor },
+      { new: true }
+    );
 
-        if(!sliderimages){
-           return res.status(404).json("No Product Found")
-        }
-
-        res.send("Deleted")
-
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-
+    if (!updatedSlide) return res.status(404).json({ message: 'Slide not found' });
+    res.json(updatedSlide);
+  } catch (error) {
+    console.error("Error updating slide:", error);
+    res.status(500).json({ message: 'Error updating slide', error });
+  }
 };
 
+// Delete a slide
+exports.deleteSlide = async (req, res) => {
+  const { id } = req.params;
 
-exports.CreateSlides = async(req,res)=>{
-    try {
-        const {name,price,brand} = req.body
+  try {
+    const deletedSlide = await SliderImage.findByIdAndDelete(id);
+    if (!deletedSlide) return res.status(404).json({ message: 'Slide not found' });
 
-        const trimmedName = name ? name.trim().toLowerCase() : null;
-
-        const searchName = await SliderImages.findOne({name:trimmedName})
-
-        if(!searchName){
-            const sliderimages = new SliderImages({
-                name,
-                price,
-                brand,
-                imageUrl: req.file.path,
-            })
-    
-            await sliderimages.save();
-    
-            res.send(sliderimages)
-        }
-        else{
-            return res.status(404).json({message:` ${name} named product already exsists`})
-        }
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-}
+    res.json({ message: 'Slide deleted successfully' });
+  } catch (error) {
+    console.error("Error deleting slide:", error);
+    res.status(500).json({ message: 'Error deleting slide', error });
+  }
+};

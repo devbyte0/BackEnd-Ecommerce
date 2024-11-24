@@ -1,16 +1,28 @@
-const express = require("express")
+// src/routes/userRoutes.js
+const express = require('express');
 const router = express.Router();
-const UserController = require('../controller/UserController')
-const upload = require("../config/multerconfig")
+const userController = require('../controller/UserController');
 
-router.get("/users",UserController.getAllUsers);
+// Register a new user
+router.post('/register', userController.register);
 
-router.get("/users/:id",UserController.getSingleUser);
+// src/routes/userRoutes.js
+router.post('/auth/refresh', userController.refreshToken);
 
-router.post("/createusers", upload.single('image') , UserController.CreateUser);
 
-router.put("/updateusers/:id", upload.single('image'),UserController.putSingleUser);
+// Login user
+router.post('/login', userController.login);
 
-router.delete("/deleteusers/:id",UserController.deleteSingleUser)
+// Update profile information
+router.put('/profile/:userId', userController.updateProfile);
+
+// Update address
+router.put('/profile/address/:userId', userController.updateAddress);
+
+// Update payment method
+router.put('/profile/payment/:userId', userController.updatePaymentMethod);
+
+router.delete('profile/:userId', userController.deleteUser);
+
 
 module.exports = router;

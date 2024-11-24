@@ -26,6 +26,10 @@ const adminSchema = new mongoose.Schema({
         type:String,
         required:true
     },
+    admin:{
+        type:Boolean,
+        default:true
+    },
     superAdmin:{
         type:Boolean,
         default:false

@@ -1,16 +1,24 @@
-const express = require("express")
+const express = require('express');
 const router = express.Router();
-const CartController = require('../controller/CartController')
-const upload = require("../config/multerconfig")
+const cartController = require('../controller/CartController');
 
-router.get("/cart/:id",CartController.getUsersCart);
+// Add item to cart
+router.post('/cart', cartController.addToCart);
 
-router.post("/createcart/:id",upload.single('image'),CartController.CreateCart);
+// Remove item from cart
+router.delete('/cart', cartController.removeFromCart);
 
-router.put("/updatecart/:id",upload.single('image'),CartController.putSingleProductInCart);
+// Get user's cart by user ID
+router.get('/cart/:userId', cartController.getCart);
 
-router.delete("/deletecart/:id",CartController.deleteAllProductInCart)
+// Apply coupon to cart
+router.post('/cart/apply-coupon', cartController.applyCoupon);
 
-router.delete("/deletesinglecartproduct/:id",upload.single('image'),CartController.deleteSingleProductInCart)
+// Remove coupon from cart
+router.post('/cart/remove-coupon', cartController.removeCoupon);
+
+// Delete entire cart
+router.delete('/cart/:userId', cartController.deleteCart);
 
 module.exports = router;
+
