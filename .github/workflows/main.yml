@@ -1,0 +1,48 @@
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PORT: 3000
+  DATABASE_URI: mongodb+srv://rezatahseen:9nifSP18mKtM2WOf@backend-testing.qhaaf.mongodb.net/MyShopData
+  CLOUD_NAME: dpknnke3k
+  API_KEY: 462679985939185
+  API_SECRET: H76oviguK2hSns4TrJOfCk0pWKE
+  JWT_SECRET: a5ab9ba07115802abbf89d1d5fc34856c284afc0e1730f36d8ebb2e77c3dec75
+  JWT_REFRESH_SECRET: 5874cbbe2871a139551176b961801c2d95d6aa9e679f7ae1d44adc42ec203a41
+
+name: 🚀 Deploy Node.js Application
+
+jobs:
+  deploy:
+    name: 🎉 Deploy Node.js Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚚 Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 🔨 Install Dependencies
+        run: npm ci
+
+      - name: 🚀 Package Application
+        run: |
+          mkdir -p deploy
+          cp -r index.js package.json package-lock.json node_modules deploy/
+          cp -r any-additional-files deploy/ # Add other necessary files like config or public assets
+
+      - name: 📂 Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@4.1.0
+        with:
+          server: ${{ secrets.ftp_server }}
+          username: ${{ secrets.ftp_name }}
+          password: ${{ secrets.ftp_password }}
+          local-dir: ./deploy/
+          dangerous-clean-slate: true
