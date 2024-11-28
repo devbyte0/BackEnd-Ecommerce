@@ -36,7 +36,6 @@ jobs:
         run: |
           mkdir -p deploy
           cp -r index.js package.json package-lock.json node_modules deploy/
-          cp -r any-additional-files deploy/ # Add other necessary files like config or public assets
 
       - name: 📂 Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@4.1.0
