@@ -52,7 +52,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "dist"))); // Serve static files from dist folder
 
 // Redirect all routes to index.html (for frontend routes)
-app.get('*', (req, res) => {
+app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, "/home/ubuntu/Frontend-test/dist", "index.html"));
 });
 
