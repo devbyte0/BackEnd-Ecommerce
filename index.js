@@ -36,7 +36,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
   cors: {
-    origin: "https://new.glitterandgrin.com", // Allow your frontend's origin
+    origin: "https://barvella.vercel.app", // Allow your frontend's origin
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -46,15 +46,7 @@ const io = socketIO(server, {
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the dist folder (for Vite React app)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, "../Frontend-test/dist"))); // Serve static files from dist folder
 
-// Redirect all routes to index.html (for frontend routes)
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, "../Frontend-test/dist", "index.html"));
-});
 
 // Define API routes
 app.use("/api", ProductRoutes);
