@@ -49,7 +49,7 @@ app.use(express.json());
 // Serve static files from the dist folder (for Vite React app)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, "dist"))); // Serve static files from dist folder
+app.use(express.static(path.join(__dirname, "/home/ubuntu/Frontend-test/dist"))); // Serve static files from dist folder
 
 // Redirect all routes to index.html (for frontend routes)
 app.get('/', (req, res) => {
