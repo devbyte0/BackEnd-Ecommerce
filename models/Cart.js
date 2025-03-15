@@ -1,54 +1,67 @@
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
 // Cart Item Schema
-const cartItemSchema = new mongoose.Schema({
+const cartItemSchema = new Schema({
+  variantId: {
+    type: Schema.Types.ObjectId,
+  },
   productId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Product', // Assuming you have a Product model
-    required: true
+    type: Schema.Types.ObjectId,
+    ref: 'Product',
+  },
+  discountApplied: {
+    type: Number,
+    default: 0, // Store the discount amount applied to this item
+  },
+  name: {
+    type: String,
   },
   quantity: {
     type: Number,
-    required: true,
-    min: 1
+    default: 1,
   },
   price: {
     type: Number,
-    required: true
   },
   mainImage: {
     type: String,
-    ref:'Product', // URL or path to the product image
-    required: true
-  }
+  },
+  size: {
+    type: String,
+  },
+  color: {
+    type: String,
+  },
 });
 
 // Cart Schema
-const cartSchema = new mongoose.Schema({
+const cartSchema = new Schema({
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Assuming you have a User model
+    type: Schema.Types.ObjectId,
+    ref: 'User',
     required: true,
-    unique: true // One cart per user
+    unique: true,
   },
   items: [cartItemSchema],
   totalAmount: {
     type: Number,
-    required: true,
-    default: 0
+    default: 0,
   },
-  coupon: {
-    code: String,
-    discount: Number, // Coupon discount percentage
-    applied: { type: Boolean, default: false }
+  discountAmount: {
+    type: Number,
+    default: 0,
+  },
+  couponId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Coupon',
+    default: null,
   },
   isActive: {
     type: Boolean,
-    default: true
-  }
-}, {
-  timestamps: true
-});
+    default: true,
+  },
+}, { timestamps: true });
 
 const Cart = mongoose.model('Cart', cartSchema);
 module.exports = Cart;

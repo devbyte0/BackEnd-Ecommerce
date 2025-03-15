@@ -6,11 +6,8 @@ const colors = require('colors');
 const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
-const path = require('path');
-const { createRequire } = require("module");
-const { fileURLToPath } = require("url");
 
-const require = createRequire(import.meta.url);
+
 
 // Import route files
 const ProductRoutes = require('./routes/ProductRoutes');
@@ -36,7 +33,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
   cors: {
-    origin: "https://barvella.vercel.app", // Allow your frontend's origin
+    origin: "http://localhost:5173/", // Allow your frontend's origin
     methods: ["GET", "POST"],
     credentials: true,
   },
