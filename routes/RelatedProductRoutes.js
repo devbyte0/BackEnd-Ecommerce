@@ -1,23 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const relatedProductController = require('../controller/RelatedProductController'); // Adjust the path if necessary
+const relatedProductController = require('../controller/RelatedProductController');
 
 
-// Route to create a new related product entry
-router.post('/createrelatedproduct', relatedProductController.createRelatedProduct);
+const {authenticateAdmin } = require('../middleware/AdminAuthMiddleware');
 
-// Route to get all related products
-router.get('/relatedproduct', relatedProductController.getAllRelatedProducts);
+// 🔐 Admin-only operations
+router.post('/createrelatedproduct', authenticateAdmin, relatedProductController.createRelatedProduct);
+router.get('/relatedproduct', authenticateAdmin, relatedProductController.getAllRelatedProducts);
+router.get('/relatedproduct/:id', authenticateAdmin, relatedProductController.getRelatedProductById);
+router.put('/updaterelatedproduct/:id', authenticateAdmin, relatedProductController.updateRelatedProduct);
+router.delete('/deleterelatedproduct/:id', authenticateAdmin,  relatedProductController.deleteRelatedProduct);
 
+// 🌐 Public-facing route (e.g. used on product pages)
 router.get('/relatedproductfront/:id', relatedProductController.getRelatedProductsByProductId);
-
-// Route to get a specific related product by ID
-router.get('/relatedproduct/:id', relatedProductController.getRelatedProductById);
-
-// Route to update a related product entry
-router.put('/updaterelatedproduct/:id', relatedProductController.updateRelatedProduct);
-
-// Route to delete a related product entry
-router.delete('/deleterelatedproduct/:id', relatedProductController.deleteRelatedProduct);
 
 module.exports = router;

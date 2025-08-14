@@ -1,11 +1,24 @@
-// routes/color-routes.js
 const express = require('express');
 const router = express.Router();
-const { addColor, getColors, updateColor, deleteColor } = require('../controller/colorController');
 
-router.post('/colors', addColor);
-router.get('/colors', getColors);
-router.put('/colors/:id', updateColor);
-router.delete('/colors/:id', deleteColor);
+const {
+  addColor,
+  getColors,
+  updateColor,
+  deleteColor
+} = require('../controller/colorController');
+
+
+const { authenticateAdmin } = require('../middleware/AdminAuthMiddleware');
+
+// Read — any authenticated admin
+router.get('/colors',  getColors);
+
+// Create and update — authenticated admin
+router.post('/colors', authenticateAdmin, addColor);
+router.put('/colors/:id', authenticateAdmin, updateColor);
+
+// Delete — super admin only
+router.delete('/colors/:id', authenticateAdmin,  deleteColor);
 
 module.exports = router;

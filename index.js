@@ -1,105 +1,148 @@
-// Import required modules
+// ==============================
+// Load environment & dependencies
+// ==============================
 const express = require('express');
-const dotenv = require("dotenv");
+const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const colors = require('colors');
 const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
 
-
-
-// Import route files
+// ==============================
+// Load routes
+// ==============================
 const ProductRoutes = require('./routes/ProductRoutes');
-const UserRoutes = require("./routes/UserRouter");
-const ImageSliderRoutes = require("./routes/SlidersRoute");
-const AdminRoutes = require("./routes/AdminRoutes");
-const CartRoutes = require("./routes/CartRoutes");
-const CategoriesRoute = require('./routes/CategoriesRoutes');
-const colorRoutes = require('./routes/colorRoutes');
-const categoryRoutes = require('./routes/CategoriesRoutes');
-const sizeRoutes = require('./routes/SizeRoutes');
-const genderRoutes = require('./routes/GenderRoutes');
-const badgeRoutes = require('./routes/BadgesRoutes');
-const couponRoutes = require('./routes/CouponRoutes');
-const relatedProductRoutes = require('./routes/RelatedProductRoutes');
+const UserRoutes = require('./routes/UserRouter');
+const ImageSliderRoutes = require('./routes/SlidersRoute');
+const AdminRoutes = require('./routes/AdminRoutes');
+const CartRoutes = require('./routes/CartRoutes');
+const CategoriesRoutes = require('./routes/CategoriesRoutes');
+const ColorRoutes = require('./routes/colorRoutes');
+const SizeRoutes = require('./routes/SizeRoutes');
+const GenderRoutes = require('./routes/GenderRoutes');
+const BadgeRoutes = require('./routes/BadgesRoutes');
+const CouponRoutes = require('./routes/CouponRoutes');
+const RelatedProductRoutes = require('./routes/RelatedProductRoutes');
+const OrderRoutes = require('./routes/OrderRoutes');
+const MeasureTypeRoutes = require('./routes/MeasureTypeRoutes');
+const orderController = require('./controller/OrderController');
 
-// Initialize environment and database connection
+// ==============================
+// Initialize environment & DB
+// ==============================
 dotenv.config();
 connectDB();
 
-// Initialize Express and HTTP server
+// ==============================
+// Initialize Express & HTTP Server
+// ==============================
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server, {
-  cors: {
-    origin: "http://localhost:5173/", // Allow your frontend's origin
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
 
-// Middleware setup
-app.use(cors());
+// ==============================
+// Middleware
+// ==============================
+app.use(cors({
+  origin: "http://localhost:5173", // ✅ Removed trailing slash
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  credentials: true,
+}));
 app.use(express.json());
 
-
-
-// Define API routes
+// ==============================
+// API Routes
+// ==============================
 app.use("/api", ProductRoutes);
 app.use("/api", UserRoutes);
 app.use("/api", ImageSliderRoutes);
 app.use("/api", AdminRoutes);
 app.use("/api", CartRoutes);
-app.use("/api", CategoriesRoute);
-app.use('/api', colorRoutes);
-app.use('/api', categoryRoutes);
-app.use('/api', sizeRoutes);
-app.use('/api', genderRoutes);
-app.use('/api', badgeRoutes);
-app.use('/api', couponRoutes);
-app.use('/api', relatedProductRoutes);
+app.use("/api", CategoriesRoutes);
+app.use('/api', ColorRoutes);
+app.use('/api', SizeRoutes);
+app.use('/api', GenderRoutes);
+app.use('/api', BadgeRoutes);
+app.use('/api', CouponRoutes);
+app.use('/api', RelatedProductRoutes);
+app.use('/api', OrderRoutes);
+app.use('/api', MeasureTypeRoutes);
 
-// Socket.io logic for real-time product viewing
-let viewers = {};
-function randomIntFromInterval(min, max) { // min and max included 
+// ==============================
+// Socket.IO for real-time viewers
+// ==============================
+const io = socketIO(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
+
+// Set socket.io instance in order controller
+orderController.setSocketIO(io);
+
+// Socket.io connection handling
+io.on('connection', (socket) => {
+  console.log('New client connected:', socket.id);
+
+  // Join user-specific room if authenticated
+  socket.on('joinUserRoom', (userId) => {
+    if (userId) {
+      socket.join(`user_${userId}`);
+      console.log(`User ${userId} joined their room`);
+    }
+  });
+
+  // Join admin room
+  socket.on('joinAdminRoom', () => {
+    socket.join('adminRoom');
+    console.log('Admin joined admin room');
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
+
+const viewers = {};
+
+function randomIntFromInterval(min, max) {
   return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
-const rndInt = randomIntFromInterval(500, 1000);
-console.log(rndInt)
-
 io.on('connection', (socket) => {
-  console.log('A person connected');
+  console.log('🔌 Client connected');
 
   socket.on('joinProduct', (productId) => {
-    socket.join(productId); // Join the product-specific room first
+    socket.join(productId);
 
-    // Increase the viewer count for this product
+    // If product not tracked yet, set random starting count
     if (!viewers[productId]) {
-      viewers[productId] = rndInt;
+      viewers[productId] = randomIntFromInterval(500, 1000);
     }
-    viewers[productId]++;
 
-    // Emit viewer count update to the room
+    // Increment viewer count
+    viewers[productId]++;
     io.to(productId).emit('viewerCountUpdate', viewers[productId]);
 
-    console.log(`User joined product: ${productId}, Viewers: ${viewers[productId]}`);
+    console.log(`📦 Product ${productId} viewers: ${viewers[productId]}`);
 
-    // Handle user disconnecting
     socket.on('disconnect', () => {
       if (viewers[productId]) {
-        viewers[productId] = Math.max(viewers[productId] - 1, 0); // Ensure viewer count doesn't go below 0
+        viewers[productId] = Math.max(viewers[productId] - 1, 0);
         io.to(productId).emit('viewerCountUpdate', viewers[productId]);
-        console.log(`User disconnected from product: ${productId}, Viewers: ${viewers[productId]}`);
+        console.log(`❌ Left product ${productId}, viewers: ${viewers[productId]}`);
       }
     });
   });
 });
 
-// Server listening
+// ==============================
+// Start Server
+// ==============================
 const PORT = process.env.PORT || 5000;
-
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`.bgBlue);
+  console.log(`🚀 Server running on port ${PORT}`.bgBlue);
 });

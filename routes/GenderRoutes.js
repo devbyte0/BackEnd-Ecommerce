@@ -1,11 +1,24 @@
-// routes/gender-routes.js
 const express = require('express');
 const router = express.Router();
-const { addGender, getGenders, updateGender, deleteGender } = require('../controller/GenderController');
 
-router.post('/genders', addGender);
+const {
+  addGender,
+  getGenders,
+  updateGender,
+  deleteGender
+} = require('../controller/GenderController');
+
+
+const { authenticateAdmin , requireSuperAdmin } = require('../middleware/AdminAuthMiddleware');
+
+// Read — any authenticated admin
 router.get('/genders', getGenders);
-router.put('/genders/:id', updateGender);
-router.delete('/genders/:id', deleteGender);
+
+// Create and update — authenticated admin
+router.post('/genders', authenticateAdmin, addGender);
+router.put('/genders/:id', authenticateAdmin, updateGender);
+
+// Delete — super admin only
+router.delete('/genders/:id', authenticateAdmin, requireSuperAdmin, deleteGender);
 
 module.exports = router;

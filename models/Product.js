@@ -4,29 +4,31 @@ const Schema = mongoose.Schema;
 const variantSchema = new Schema({
   colorName: String,
   hexCode: String,
-  sizes: [String],  // Sizes as an array
-  prices: [Number], // Prices as an array
-  deliveryTimes: [Number], // Delivery times as an array
+  sizes: [String],          // Sizes as an array
+  prices: [Number],         // Prices as an array
+  deliveryTimes: [Number],  // Delivery times as an array
   stock: Number,
   description: String,
   discountPrices: [Number], // Discount prices as an array
-  badgeNames: [String], // Badge names as an array
-  badgeColors: [String], // Badge colors as an array
-  images: [String]
+  badgeNames: [String],     // Badge names as an array
+  badgeColors: [String],    // Badge colors as an array
+  images: [String],
+  measureType: { type: String, required: true },
+  unitName: { type: String, required: true }
 }, { timestamps: true });
 
 const productSchema = new Schema({
   name: { type: String, required: true, unique: true },
   categories: [String],
   mainPrice: Number,
-  discountPrice: Number, // Discount price for the main product
-  mainBadgeName: String, // Main badge name
-  mainBadgeColor: String, // Main badge color
-  gender: { type: String, enum: ['Male', 'Female', 'Unisex'], required: true }, // Gender field
+  discountPrice: Number,
+  mainBadgeName: String,
+  mainBadgeColor: String,
+  gender: { type: String, enum: ['Male', 'Female', 'Unisex'], required: true },
+  measureType: { type: String, required: true },
+  unitName: { type: String, required: true },
   variants: [variantSchema],
   mainImage: { type: String, required: true }
 }, { timestamps: true });
 
-const Product = mongoose.model('Product', productSchema);
-
-module.exports = Product;
+module.exports = mongoose.model('Product', productSchema);

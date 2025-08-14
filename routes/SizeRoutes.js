@@ -1,12 +1,24 @@
-// routes/size-routes.js
 const express = require('express');
 const router = express.Router();
-const { addSize, getSizes, updateSize, deleteSize } = require('../controller/sizeController');
 
-router.post('/sizes', addSize);
+const {
+  addSize,
+  getSizes,
+  updateSize,
+  deleteSize
+} = require('../controller/sizeController');
+
+
+const { authenticateAdmin  } = require('../middleware/AdminAuthMiddleware');
+
+// Read — any authenticated admin
 router.get('/sizes', getSizes);
-router.put('/sizes/:id', updateSize);
-router.delete('/sizes/:id', deleteSize);
 
+// Create and update — authenticated admin
+router.post('/sizes', authenticateAdmin, addSize);
+router.put('/sizes/:id', authenticateAdmin, updateSize);
+
+// Delete — super admin only
+router.delete('/sizes/:id', authenticateAdmin,  deleteSize);
 
 module.exports = router;

@@ -33,6 +33,14 @@ const cartItemSchema = new Schema({
   color: {
     type: String,
   },
+  measureType: {
+    type: String,
+    
+  },
+  unitName: {
+    type: String,
+    
+  },
 });
 
 // Cart Schema

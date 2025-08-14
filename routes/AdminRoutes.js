@@ -1,16 +1,24 @@
-const express = require("express")
+const express = require('express');
 const router = express.Router();
-const AdminController = require('../controller/adminController')
-const upload = require("../config/multerconfig")
 
-router.get("/admins",AdminController.getAllAdmins);
+const AdminController = require('../controller/adminController'); // Full controller with auth & CRUD
+const upload = require('../config/multerconfig');
+const {authenticateAdmin} = require('../middleware/AdminAuthMiddleware'); // Validates access token
 
-router.get("/admins/:id",AdminController.getSingleAdmin);
+// 🔐 Auth & Session
+router.post('/admin/login', AdminController.login);                          // Admin login
+router.post('/admin/register',  upload.single('image'), AdminController.register); // Register (superAdmin only)
+router.post('/admin/logout', authenticateAdmin, AdminController.logout); 
+router.post("/admin/verify-token",  AdminController.verifyToken)    
+router.post('/admin/refresh-token', AdminController.refreshToken);           // Get new access token
 
-router.post("/createadmins", upload.single('image') , AdminController.CreateAdmins);
+// 🔒 Create/Update/Delete admins (superAdmin only)
+router.post('/create-admin', authenticateAdmin, upload.single('image'), AdminController.createAdmin);
+router.put('/update-admin/:id', authenticateAdmin, upload.single('image'), AdminController.updateAdmin);
+router.delete('/delete-admin', authenticateAdmin, AdminController.deleteAdmin);
 
-router.put("/updateadmins/:id", upload.single('image'),AdminController.putSingleAdmin);
-
-router.delete("/deleteadmins/:id",AdminController.deleteSingleAdmin)
+// 📍 Admin info
+router.get('/admin/:id', authenticateAdmin, AdminController.getSingleAdmin);       // View one
+router.get('/admins', authenticateAdmin, AdminController.getAllAdmins);            // View all (superAdmin only)
 
 module.exports = router;
