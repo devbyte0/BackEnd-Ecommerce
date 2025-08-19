@@ -14,44 +14,20 @@ const generateTokens = (adminId) => {
 
 exports.verifyToken = async (req, res) => {
   try {
-    const { token } = req.body;
-    const authHeader = req.headers.authorization;
-    
-    if (!token) {
-      return res.status(400).json({ valid: false, message: 'Token is required' });
-    }
+    const { token, type } = req.body; // type: 'access' | 'refresh'
 
-    // Verify refresh token
-    jwt.verify(token, process.env.JWT_REFRESH_SECRET, (err, decoded) => {
-      if (err) {
-        return res.status(200).json({ valid: false, message: 'Invalid refresh token' });
-      }
-      
-      // If you want to verify the access token too
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const accessToken = authHeader.split(' ')[1];
-        try {
-          jwt.verify(accessToken, process.env.JWT_SECRET);
-          return res.status(200).json({ 
-            valid: true,
-            adminId: decoded.adminId 
-          });
-        } catch (accessTokenError) {
-          return res.status(200).json({ 
-            valid: false,
-            message: 'Access token invalid but refresh token valid' 
-          });
-        }
-      }
-      
-      res.status(200).json({ 
-        valid: true,
-        adminId: decoded.adminId 
-      });
+    if (!token) return res.status(400).json({ valid: false, message: 'Token is required' });
+
+    const secret = type === 'refresh' ? JWT_REFRESH_SECRET : JWT_SECRET;
+
+    jwt.verify(token, secret, (err, decoded) => {
+      if (err) return res.status(200).json({ valid: false, message: 'Invalid token' });
+      res.status(200).json({ valid: true, adminId: decoded.adminId });
     });
+
   } catch (error) {
     console.error('Token verification error:', error);
-    res.status(500).json({ message: 'Token verification failed', valid: false });
+    res.status(500).json({ valid: false, message: 'Token verification failed' });
   }
 };
 

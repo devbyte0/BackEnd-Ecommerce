@@ -26,6 +26,8 @@ const CouponRoutes = require('./routes/CouponRoutes');
 const RelatedProductRoutes = require('./routes/RelatedProductRoutes');
 const OrderRoutes = require('./routes/OrderRoutes');
 const MeasureTypeRoutes = require('./routes/MeasureTypeRoutes');
+const ChatRoomRoutes = require('./routes/ChatRoomRoutes');
+
 const orderController = require('./controller/OrderController');
 
 // ==============================
@@ -44,7 +46,7 @@ const server = http.createServer(app);
 // Middleware
 // ==============================
 app.use(cors({
-  origin: "http://localhost:5173", // ✅ Removed trailing slash
+  origin: process.env.CLIENT_URL || "http://localhost:5173",
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   credentials: true,
 }));
@@ -67,13 +69,14 @@ app.use('/api', CouponRoutes);
 app.use('/api', RelatedProductRoutes);
 app.use('/api', OrderRoutes);
 app.use('/api', MeasureTypeRoutes);
+app.use('/api', ChatRoomRoutes);
 
 // ==============================
-// Socket.IO for real-time viewers
+// Socket.IO Configuration
 // ==============================
 const io = socketIO(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -82,60 +85,64 @@ const io = socketIO(server, {
 // Set socket.io instance in order controller
 orderController.setSocketIO(io);
 
-// Socket.io connection handling
-io.on('connection', (socket) => {
-  console.log('New client connected:', socket.id);
+// ==============================
+// Connected users
+// ==============================
+const connectedUsers = new Map();
 
-  // Join user-specific room if authenticated
+// ==============================
+// Socket.IO Event Handlers
+// ==============================
+io.on('connection', (socket) => {
+  console.log('🔌 New client connected:', socket.id);
+
+  // ======================
+  // Join user room
+  // ======================
   socket.on('joinUserRoom', (userId) => {
-    if (userId) {
-      socket.join(`user_${userId}`);
-      console.log(`User ${userId} joined their room`);
-    }
+    if (!userId) return;
+    socket.join(`user_${userId}`);
+    connectedUsers.set(socket.id, { userId, userType: 'user' });
+    console.log(`👤 User ${userId} joined room user_${userId}`);
   });
 
+  // ======================
   // Join admin room
-  socket.on('joinAdminRoom', () => {
+  // ======================
+  socket.on('joinAdminRoom', (adminId) => {
     socket.join('adminRoom');
-    console.log('Admin joined admin room');
+    connectedUsers.set(socket.id, { userId: adminId, userType: 'admin' });
+    console.log(`🛡️ Admin ${adminId} joined admin room`);
+  });
+
+  // ======================
+  // Chat room logic
+  // ======================
+  socket.on('joinChatRoom', ({ roomId, userId, userType }) => {
+    if (!roomId || !userId) return;
+    socket.join(`chat_${roomId}`);
+    connectedUsers.set(socket.id, { userId, userType, roomId });
+    console.log(`💬 User ${userId} (${userType}) joined chat_${roomId}`);
+    io.to('adminRoom').emit('userJoinedRoom', { roomId, userId, userType });
+  });
+
+  socket.on('sendMessage', (message) => {
+    const { roomId, senderId, senderType, text } = message;
+    if (!roomId || !senderId || !text) return;
+    const messageData = { senderId, senderType, text, timestamp: new Date(), roomId };
+    io.to(`chat_${roomId}`).emit('messageReceived', messageData);
+    io.to('adminRoom').emit('messageReceived', messageData);
+    console.log(`✉️ Message sent to chat_${roomId} by ${senderId}`);
   });
 
   socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-  });
-});
-
-
-const viewers = {};
-
-function randomIntFromInterval(min, max) {
-  return Math.floor(Math.random() * (max - min + 1) + min);
-}
-
-io.on('connection', (socket) => {
-  console.log('🔌 Client connected');
-
-  socket.on('joinProduct', (productId) => {
-    socket.join(productId);
-
-    // If product not tracked yet, set random starting count
-    if (!viewers[productId]) {
-      viewers[productId] = randomIntFromInterval(500, 1000);
+    const userData = connectedUsers.get(socket.id);
+    if (userData) {
+      console.log(`❌ Client disconnected: ${userData.userId} (${userData.userType})`);
+      connectedUsers.delete(socket.id);
+    } else {
+      console.log('❌ Anonymous client disconnected');
     }
-
-    // Increment viewer count
-    viewers[productId]++;
-    io.to(productId).emit('viewerCountUpdate', viewers[productId]);
-
-    console.log(`📦 Product ${productId} viewers: ${viewers[productId]}`);
-
-    socket.on('disconnect', () => {
-      if (viewers[productId]) {
-        viewers[productId] = Math.max(viewers[productId] - 1, 0);
-        io.to(productId).emit('viewerCountUpdate', viewers[productId]);
-        console.log(`❌ Left product ${productId}, viewers: ${viewers[productId]}`);
-      }
-    });
   });
 });
 

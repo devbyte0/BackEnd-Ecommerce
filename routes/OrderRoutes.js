@@ -24,6 +24,9 @@ router.patch('/orders/:orderId/status', authenticateAdmin, orderController.updat
 // ❌ Cancel order — either
 router.patch('/orders/:orderId/cancel', authenticate ,  orderController.cancelOrder);
 
+// ❌ Cancel order — either
+router.patch('/orders/cancel/:orderId', authenticateAdmin ,  orderController.cancelOrderAdmin);
+
 // 🗑️ Delete — only super admin
 router.delete('/orders/:orderId', [authenticateAdmin, requireSuperAdmin], orderController.deleteOrder);
 

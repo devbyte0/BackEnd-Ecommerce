@@ -440,6 +440,57 @@ module.exports.cancelOrder = async (req, res) => {
   }
 };
 
+module.exports.cancelOrderAdmin = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { orderId } = req.params;
+
+    if (!orderId) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'Order ID is required' });
+    }
+
+    const order = await Order.findOne({ orderId }).session(session);
+    if (!order) {
+      await session.abortTransaction();
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    if (!['pending', 'processing'].includes(order.orderStatus)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: `Cannot cancel order with status '${order.orderStatus}'`
+      });
+    }
+
+    order.orderStatus = 'cancelled';
+    order.isActive = false;
+
+    const updatedOrder = await order.save({ session });
+    await session.commitTransaction();
+
+    notifyOrderUpdate(updatedOrder, 'cancel');
+
+    return res.json({ 
+      success: true,
+      message: 'Order cancelled successfully',
+      order: updatedOrder 
+    });
+
+  } catch (err) {
+    await session.abortTransaction();
+    console.error('Cancel Order Error:', err);
+    return res.status(500).json({ 
+      success: false,
+      message: err.message || 'Failed to cancel order' 
+    });
+  } finally {
+    session.endSession();
+  }
+};
+
 module.exports.deleteOrder = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
