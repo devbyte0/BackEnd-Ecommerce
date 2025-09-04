@@ -1,5 +1,6 @@
 const ChatRoom = require("../models/ChatRoom");
 const { NotFoundError, BadRequestError } = require("../errors/errors");
+const mongoose = require('mongoose');
 
 exports.getOrCreateRoom = async (req, res) => {
   try {
@@ -12,24 +13,24 @@ exports.getOrCreateRoom = async (req, res) => {
     }
 
     let room = await ChatRoom.findOne({
-      $or: [
-        { customerId, isClosed: false },
-        { participants: userId, isClosed: false }
-      ]
+      customerId,
+      isClosed: false
     })
-    .populate('participants', 'name profileImage')
-    .populate('assignedAdmin', 'name email');
+    .populate('customerId', 'firstName lastName email profileImage')
+    .populate('assignedAdmin', 'firstName lastName email');
 
     if (!room) {
       room = await ChatRoom.create({ 
         customerId,
-        participants: [userId],
         messages: []
       });
       
       // Notify admin room about new chat
       const io = req.app.get('socketio');
-      io.to('adminRoom').emit('newChatRoom', room);
+      if (io) {
+        io.to('adminRoom').emit('newChatRoom', room);
+        console.log(`📤 Emitted newChatRoom to adminRoom`);
+      }
     }
 
     res.json(room);
@@ -46,7 +47,7 @@ exports.sendMessage = async (req, res) => {
     const { roomId } = req.params;
     const { text } = req.body;
     const senderId = req.user?._id || req.admin?._id;
-    const senderType = req.user ? "user" : "admin";
+    const senderType = req.user ? "customer" : "admin";
 
     // Validate input
     if (!roomId || !text || !senderId) {
@@ -62,25 +63,121 @@ exports.sendMessage = async (req, res) => {
       throw new BadRequestError('Cannot send message to closed chat room');
     }
 
-    const newMessage = { 
+    // Create message with proper structure and explicit _id
+    const newMessage = {
+      _id: new mongoose.Types.ObjectId(), // Explicitly set _id
       senderId, 
       senderType, 
       text,
       reaction: "",
+      readBy: [{
+        readerType: senderType,
+        readerId: senderId,
+        readAt: new Date()
+      }],
       createdAt: new Date()
     };
     
+    // Add message to room
     room.messages.push(newMessage);
     await room.save();
 
+    // Get the saved message with proper _id
+    const savedMessage = room.messages[room.messages.length - 1];
+
     // Emit via socket
     const io = req.app.get('socketio');
-    io.to(`chat_${roomId}`).emit("messageReceived", newMessage);
-    io.to('adminRoom').emit("messageReceived", { ...newMessage, roomId });
+    if (io) {
+      // Use toObject() to ensure proper serialization
+      const messageData = { ...savedMessage.toObject(), roomId };
+      io.to(`chat_${roomId}`).emit("messageReceived", messageData);
+      io.to('adminRoom').emit("messageReceived", messageData);
+      
+      // Emit message confirmation for temporary messages
+      io.to(`chat_${roomId}`).emit("messageConfirmed", {
+        tempId: `temp_${Date.now()}`,
+        realId: savedMessage._id,
+        updates: {
+          _id: savedMessage._id,
+          readBy: savedMessage.readBy
+        }
+      });
+      
+      console.log(`📤 Emitted message to chat_${roomId} and adminRoom`);
+    }
 
-    res.status(201).json(newMessage);
+    res.status(201).json(savedMessage);
   } catch (err) {
     console.error('Error in sendMessage:', err);
+    res.status(err.statusCode || 500).json({ 
+      message: err.message || 'Server error' 
+    });
+  }
+};
+
+// Auto-assign admin to unassigned room
+exports.autoAssignAdmin = async (req, res) => {
+  try {
+    const adminId = req.admin._id;
+    const adminName = req.admin.firstName || req.admin.name || 'Admin';
+
+    // Find an unassigned room
+    const unassignedRoom = await ChatRoom.findOne({ 
+      assignedAdmin: null, 
+      isClosed: false 
+    }).populate('customerId', 'firstName lastName');
+
+    if (!unassignedRoom) {
+      return res.json({ message: "No unassigned rooms available" });
+    }
+
+    // Assign admin to the room
+    unassignedRoom.assignedAdmin = adminId;
+    await unassignedRoom.save();
+
+    // Send auto-welcome message with proper _id
+    const welcomeMessage = {
+      _id: new mongoose.Types.ObjectId(), // Explicitly set _id
+      senderId: adminId,
+      senderType: "admin",
+      text: `Hello ${unassignedRoom.customerId.firstName || 'there'}! ${adminName} speaking, how can I help you today?`,
+      reaction: "",
+      readBy: [{
+        readerType: "admin",
+        readerId: adminId,
+        readAt: new Date()
+      }],
+      createdAt: new Date()
+    };
+
+    // Add welcome message to room
+    unassignedRoom.messages.push(welcomeMessage);
+    await unassignedRoom.save();
+
+    // Get the saved message with proper _id
+    const savedWelcomeMessage = unassignedRoom.messages[unassignedRoom.messages.length - 1];
+
+    // Emit welcome message via socket
+    const io = req.app.get('socketio');
+    if (io) {
+      // Use toObject() to ensure proper serialization
+      const messageData = { ...savedWelcomeMessage.toObject(), roomId: unassignedRoom._id };
+      io.to(`chat_${unassignedRoom._id}`).emit("messageReceived", messageData);
+      io.to('adminRoom').emit("messageReceived", messageData);
+      io.to('adminRoom').emit("roomAssigned", { 
+        roomId: unassignedRoom._id, 
+        adminId,
+        adminName 
+      });
+    }
+
+    res.json({ 
+      message: "Admin auto-assigned successfully", 
+      room: unassignedRoom,
+      welcomeMessage 
+    });
+  } catch (err) {
+    console.error('Error in autoAssignAdmin:', err);
     res.status(err.statusCode || 500).json({ 
       message: err.message || 'Server error' 
     });
@@ -112,16 +209,18 @@ exports.transferAdmin = async (req, res) => {
 
     // Notify via socket
     const io = req.app.get('socketio');
-    io.to(`chat_${roomId}`).emit("roomTransferred", { 
-      roomId, 
-      newAdminId,
-      transferredBy: currentAdminId
-    });
-    io.to('adminRoom').emit("roomTransferred", { 
-      roomId, 
-      newAdminId,
-      transferredBy: currentAdminId
-    });
+    if (io) {
+      io.to(`chat_${roomId}`).emit("roomTransferred", { 
+        roomId, 
+        newAdminId,
+        transferredBy: currentAdminId
+      });
+      io.to('adminRoom').emit("roomTransferred", { 
+        roomId, 
+        newAdminId,
+        transferredBy: currentAdminId
+      });
+    }
 
     res.json(room);
   } catch (err) {
@@ -158,14 +257,16 @@ exports.closeRoom = async (req, res) => {
 
     // Notify via socket
     const io = req.app.get('socketio');
-    io.to(`chat_${roomId}`).emit("roomClosed", { 
-      roomId, 
-      closedBy: adminId 
-    });
-    io.to('adminRoom').emit("roomClosed", { 
-      roomId, 
-      closedBy: adminId 
-    });
+    if (io) {
+      io.to(`chat_${roomId}`).emit("roomClosed", { 
+        roomId, 
+        closedBy: adminId 
+      });
+      io.to('adminRoom').emit("roomClosed", { 
+        roomId, 
+        closedBy: adminId 
+      });
+    }
 
     res.json({ 
       message: "Room closed successfully", 
@@ -208,11 +309,13 @@ exports.addReaction = async (req, res) => {
 
     // Notify via socket
     const io = req.app.get('socketio');
-    io.to(`chat_${roomId}`).emit("messageUpdated", { 
-      messageId, 
-      reaction: msg.reaction,
-      reactedBy: userId
-    });
+    if (io) {
+      io.to(`chat_${roomId}`).emit("messageUpdated", { 
+        messageId, 
+        reaction: msg.reaction,
+        reactedBy: userId
+      });
+    }
 
     res.json({
       messageId,
@@ -233,8 +336,8 @@ exports.getAllRooms = async (req, res) => {
     const adminId = req.admin._id;
 
     const rooms = await ChatRoom.find({ isClosed: false })
-      .populate('customerId', 'name profileImage')
-      .populate('assignedAdmin', 'name email')
+      .populate('customerId', 'firstName lastName email profileImage')
+      .populate('assignedAdmin', 'firstName lastName email')
       .sort({ updatedAt: -1 }); // latest first
 
     res.json(rooms);
@@ -251,8 +354,8 @@ exports.getRoomById = async (req, res) => {
     if (!roomId) throw new BadRequestError("Room ID is required");
 
     const room = await ChatRoom.findById(roomId)
-      .populate('customerId', 'name profileImage')
-      .populate('assignedAdmin', 'name email');
+      .populate('customerId', 'firstName lastName email profileImage')
+      .populate('assignedAdmin', 'firstName lastName email');
 
     if (!room) throw new NotFoundError("Chat room not found");
 
@@ -260,5 +363,98 @@ exports.getRoomById = async (req, res) => {
   } catch (err) {
     console.error("Error in getRoomById:", err);
     res.status(err.statusCode || 500).json({ message: err.message || "Server error" });
+  }
+};
+
+// Mark messages as read - now handled via socket
+exports.markAsRead = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const readerType = req.user ? "customer" : "admin";
+    const readerId = req.user?._id || req.admin?._id;
+
+    if (!roomId || !readerId) {
+      throw new BadRequestError('Room ID and reader ID are required');
+    }
+
+    const room = await ChatRoom.findById(roomId);
+    if (!room) {
+      throw new NotFoundError('Chat room not found');
+    }
+
+    // Mark all unread messages as read by this user type
+    room.messages.forEach(message => {
+      const alreadyRead = message.readBy.some(read => 
+        read.readerType === readerType && read.readerId.equals(readerId)
+      );
+      
+      if (!alreadyRead) {
+        message.readBy.push({
+          readerType,
+          readerId,
+          readAt: new Date()
+        });
+      }
+    });
+
+    await room.save();
+
+    // Emit read status update via socket
+    const io = req.app.get('socketio');
+    if (io) {
+      io.to(`chat_${roomId}`).emit("messagesRead", { 
+        roomId, 
+        readerType,
+        readerId,
+        readAt: new Date()
+      });
+      
+      // Emit message status updates for each message
+      room.messages.forEach(message => {
+        io.to(`chat_${roomId}`).emit("messageStatusUpdated", {
+          messageId: message._id,
+          updates: {
+            readBy: message.readBy
+          }
+        });
+      });
+    }
+
+    res.json({ message: "Messages marked as read" });
+  } catch (err) {
+    console.error('Error in markAsRead:', err);
+    res.status(err.statusCode || 500).json({ 
+      message: err.message || 'Server error' 
+    });
+  }
+};
+
+// Update online status - now handled via socket only
+exports.updateOnlineStatus = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { isOnline } = req.body;
+    const userId = req.user?._id || req.admin?._id;
+
+    if (!roomId || !userId) {
+      throw new BadRequestError('Room ID and user ID are required');
+    }
+
+    // Emit online status update via socket only
+    const io = req.app.get('socketio');
+    if (io) {
+      io.to(`chat_${roomId}`).emit("onlineStatusChanged", { 
+        roomId, 
+        userId,
+        isOnline 
+      });
+    }
+
+    res.json({ message: "Online status updated" });
+  } catch (err) {
+    console.error('Error in updateOnlineStatus:', err);
+    res.status(err.statusCode || 500).json({ 
+      message: err.message || 'Server error' 
+    });
   }
 };

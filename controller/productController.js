@@ -1,5 +1,30 @@
 const Product = require('../models/Product');
 const cloudinary = require('../config/coudinaryconfig');
+const mongoose = require('mongoose');
+const Shipping = require('../models/Shipping');
+
+// Socket.io instance (set from server.js)
+let ioInstance = null;
+
+// Helper function to emit product updates
+function emitProductUpdate(productId, updateType, data = {}) {
+  if (!ioInstance) return;
+
+  const eventData = {
+    productId,
+    updateType,
+    timestamp: new Date(),
+    ...data
+  };
+
+  // Emit to product room
+  ioInstance.to(`product_${productId}`).emit('productUpdate', eventData);
+  
+  // Emit to admin room for monitoring
+  ioInstance.to('adminRoom').emit('productUpdate', eventData);
+  
+  console.log(`📦 Product update emitted: ${updateType} for product ${productId}`);
+}
 
 const addProduct = async (req, res) => {
   try {
@@ -37,16 +62,60 @@ const addProduct = async (req, res) => {
       mainBadgeName: req.body.mainBadgeName,
       mainBadgeColor: req.body.mainBadgeColor,
       gender: req.body.gender,
-      variants: variants.map((variant, index) => ({
-        ...variant,
-        images: variantImages[index] || []
+      variants: await Promise.all(variants.map(async (variant, index) => {
+        // Build shipping options strictly from shippingIds
+        let shippingFields = {};
+        if (Array.isArray(variant.shippingIds) && variant.shippingIds.length > 0) {
+          const ships = await Shipping.find({ _id: { $in: variant.shippingIds } });
+          const options = ships.map(s => ({ name: s.name, charge: s.charge, estimatedDays: s.estimatedDays }));
+          shippingFields = { shippingOptions: options };
+        }
+
+        // Handle stockBySize array - each size has its own stock
+        let stockBySize = [];
+        if (Array.isArray(variant.stockBySize)) {
+          stockBySize = variant.stockBySize;
+        } else if (Array.isArray(variant.stock)) {
+          stockBySize = variant.stock;
+        } else if (typeof variant.stock === 'number') {
+          // If stock is a single number, distribute it across all sizes
+          stockBySize = new Array(variant.sizes.length).fill(variant.stock);
+        } else {
+          // Default to 0 for each size
+          stockBySize = new Array(variant.sizes.length).fill(0);
+        }
+
+        // Ensure stockBySize array matches the sizes array length
+        while (stockBySize.length < variant.sizes.length) {
+          stockBySize.push(0);
+        }
+        stockBySize = stockBySize.slice(0, variant.sizes.length);
+
+        // Calculate total stock for backward compatibility
+        const totalStock = stockBySize.reduce((sum, stock) => sum + stock, 0);
+
+        return ({
+          ...variant,
+          deliveryTimes: undefined,
+          ...shippingFields,
+          images: variantImages[index] || [],
+          stockBySize,
+          stock: totalStock, // Legacy field
+          specifications: Array.isArray(variant.specifications) ? variant.specifications : []
+        });
       })),
       mainImage: mainImageUrl,
-      measureType: req.body.measureType,  // Added measureType
-      unitName: req.body.unitName         // Added unitName
+      measureType: req.body.measureType,
+      unitName: req.body.unitName
     });
 
     await newProduct.save();
+    
+    // Emit product creation event
+    emitProductUpdate(newProduct._id, 'product_created', {
+      product: newProduct
+    });
+    
     res.status(201).json(newProduct);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -99,13 +168,80 @@ const updateProduct = async (req, res) => {
     product.measureType = req.body.measureType || product.measureType; // Update measureType
     product.unitName = req.body.unitName || product.unitName;          // Update unitName
 
-    product.variants = variants.map((variant, index) => ({
-      ...product.variants[index],
-      ...variant,
-      images: variantImages[index] || product.variants[index].images
+    product.variants = await Promise.all(variants.map(async (variant, index) => {
+      let shippingFields = {};
+      if (Array.isArray(variant.shippingIds) && variant.shippingIds.length > 0) {
+        const ships = await Shipping.find({ _id: { $in: variant.shippingIds } });
+        const options = ships.map(s => ({ name: s.name, charge: s.charge, estimatedDays: s.estimatedDays }));
+        shippingFields = { shippingOptions: options };
+      }
+
+      // Handle stockBySize array - each size has its own stock
+      let stockBySize = [];
+      if (Array.isArray(variant.stockBySize)) {
+        stockBySize = variant.stockBySize;
+      } else if (Array.isArray(variant.stock)) {
+        stockBySize = variant.stock;
+      } else if (typeof variant.stock === 'number') {
+        // If stock is a single number, distribute it across all sizes
+        stockBySize = new Array(variant.sizes.length).fill(variant.stock);
+      } else {
+        // Default to 0 for each size
+        stockBySize = new Array(variant.sizes.length).fill(0);
+      }
+
+      // Ensure stockBySize array matches the sizes array length
+      while (stockBySize.length < variant.sizes.length) {
+        stockBySize.push(0);
+      }
+      stockBySize = stockBySize.slice(0, variant.sizes.length);
+
+      // Calculate total stock for backward compatibility
+      const totalStock = stockBySize.reduce((sum, stock) => sum + stock, 0);
+
+      // Start from existing images
+      let imagesArray = Array.isArray(product.variants[index]?.images)
+        ? [...product.variants[index].images]
+        : [];
+
+      // Handle deletion list from form-data field deleteImages-{index}
+      const deleteKey = `deleteImages-${index}`;
+      if (req.body && Object.prototype.hasOwnProperty.call(req.body, deleteKey)) {
+        try {
+          const toDelete = JSON.parse(req.body[deleteKey]);
+          if (Array.isArray(toDelete) && toDelete.length > 0) {
+            imagesArray = imagesArray.filter((url) => !toDelete.includes(url));
+          }
+        } catch (e) {
+          // ignore parse errors silently
+        }
+      }
+
+      // Append any newly uploaded images for this variant
+      if (variantImages[index] && Array.isArray(variantImages[index]) && variantImages[index].length > 0) {
+        imagesArray = imagesArray.concat(variantImages[index]);
+      }
+
+              const merged = ({
+          ...product.variants[index],
+          ...variant,
+          deliveryTimes: undefined,
+          ...shippingFields,
+          images: imagesArray,
+          stockBySize,
+          stock: totalStock, // Legacy field
+          specifications: Array.isArray(variant.specifications) ? variant.specifications : []
+        });
+      return merged;
     }));
 
     await product.save();
+    
+    // Emit product update event
+    emitProductUpdate(product._id, 'product_updated', {
+      product: product
+    });
+    
     res.status(200).json(product);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -114,9 +250,61 @@ const updateProduct = async (req, res) => {
 
 const getProducts = async (req, res) => {
   try {
-    const products = await Product.find();
-    res.status(200).json(products);
+    const { q: searchQuery, category, brand, gender, minPrice, maxPrice, limit = 50 } = req.query;
+    
+    // Build search filter
+    let filter = {};
+    
+    // Text search across multiple fields
+    if (searchQuery) {
+      filter.$or = [
+        { name: { $regex: searchQuery, $options: 'i' } },
+        { brand: { $regex: searchQuery, $options: 'i' } },
+        { categories: { $regex: searchQuery, $options: 'i' } },
+        { description: { $regex: searchQuery, $options: 'i' } }
+      ];
+    }
+    
+    // Category filter
+    if (category) {
+      filter.categories = { $regex: category, $options: 'i' };
+    }
+    
+    // Brand filter
+    if (brand) {
+      filter.brand = { $regex: brand, $options: 'i' };
+    }
+    
+    // Gender filter
+    if (gender) {
+      filter.gender = gender;
+    }
+    
+    // Price range filter
+    if (minPrice || maxPrice) {
+      filter.mainPrice = {};
+      if (minPrice) filter.mainPrice.$gte = parseFloat(minPrice);
+      if (maxPrice) filter.mainPrice.$lte = parseFloat(maxPrice);
+    }
+    
+    // Execute query with population
+    const products = await Product.find(filter)
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 });
+    
+    // If it's a search request, return with search metadata
+    if (searchQuery) {
+      res.status(200).json({
+        products,
+        searchQuery,
+        totalResults: products.length,
+        message: `Found ${products.length} products matching "${searchQuery}"`
+      });
+    } else {
+      res.status(200).json(products);
+    }
   } catch (error) {
+    console.error('Error in getProducts:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -137,7 +325,15 @@ const getSingleProduct = async (req, res) => {
 const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    await Product.findByIdAndDelete(id);
+    const deletedProduct = await Product.findByIdAndDelete(id);
+    
+    // Emit product deletion event
+    if (deletedProduct) {
+      emitProductUpdate(id, 'product_deleted', {
+        productId: id
+      });
+    }
+    
     res.status(200).json({ message: 'Product deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -157,11 +353,251 @@ const deleteVariant = async (req, res) => {
   }
 };
 
+
+
+// ==============================
+// Reviews
+// ==============================
+async function addReview(req, res) {
+  try {
+    const { id } = req.params; // product id
+    const { rating, comment } = req.body;
+    const userId = req.user?._id; // from auth middleware
+
+    if (!userId) return res.status(401).json({ message: 'Login required' });
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ message: 'Rating 1-5 required' });
+
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    // Prevent duplicate review by same user (optional)
+    const existing = product.reviews?.find(r => r.user.toString() === userId.toString());
+    if (existing) {
+      existing.rating = rating;
+      existing.comment = comment || existing.comment;
+    } else {
+      product.reviews.push({ user: userId, rating, comment });
+    }
+
+    // Recompute aggregates
+    const totalReviews = product.reviews.length;
+    const avg = product.reviews.reduce((sum, r) => sum + r.rating, 0) / (totalReviews || 1);
+    product.totalReviews = totalReviews;
+    product.averageRating = Number(avg.toFixed(2));
+
+    await product.save();
+    const populated = await Product.findById(id).populate('reviews.user', 'firstName lastName email');
+    return res.status(200).json({ message: 'Review saved', product: populated });
+  } catch (error) {
+    console.error('addReview error', error);
+    return res.status(500).json({ message: 'Failed to add review' });
+  }
+}
+
+async function getReviews(req, res) {
+  try {
+    const { id } = req.params; // product id
+    const product = await Product.findById(id).populate('reviews.user', 'firstName lastName email');
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    return res.status(200).json({ reviews: product.reviews, averageRating: product.averageRating, totalReviews: product.totalReviews });
+  } catch (error) {
+    console.error('getReviews error', error);
+    return res.status(500).json({ message: 'Failed to fetch reviews' });
+  }
+}
+
+async function updateReview(req, res) {
+  try {
+    const { id, reviewId } = req.params; // product id, review id
+    const { rating, comment } = req.body;
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ message: 'Login required' });
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    const review = product.reviews.id(reviewId);
+    if (!review) return res.status(404).json({ message: 'Review not found' });
+    if (review.user.toString() !== userId.toString()) {
+      return res.status(403).json({ message: 'Not authorized to edit this review' });
+    }
+
+    if (rating) review.rating = Math.min(5, Math.max(1, rating));
+    if (comment !== undefined) review.comment = comment;
+
+    // Recompute aggregates
+    const totalReviews = product.reviews.length;
+    const avg = product.reviews.reduce((sum, r) => sum + r.rating, 0) / (totalReviews || 1);
+    product.totalReviews = totalReviews;
+    product.averageRating = Number(avg.toFixed(2));
+
+    await product.save();
+    const populated = await Product.findById(id).populate('reviews.user', 'firstName lastName email');
+    return res.status(200).json({ message: 'Review updated', product: populated });
+  } catch (error) {
+    console.error('updateReview error', error);
+    return res.status(500).json({ message: 'Failed to update review' });
+  }
+}
+
+async function deleteReview(req, res) {
+  try {
+    const { id, reviewId } = req.params; // product id, review id
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ message: 'Login required' });
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    const review = product.reviews.id(reviewId);
+    if (!review) return res.status(404).json({ message: 'Review not found' });
+    if (review.user.toString() !== userId.toString()) {
+      return res.status(403).json({ message: 'Not authorized to delete this review' });
+    }
+
+    review.remove();
+
+    // Recompute aggregates
+    const totalReviews = product.reviews.length;
+    const avg = totalReviews > 0 ? (product.reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews) : 0;
+    product.totalReviews = totalReviews;
+    product.averageRating = Number(avg.toFixed(2));
+
+    await product.save();
+    const populated = await Product.findById(id).populate('reviews.user', 'firstName lastName email');
+    return res.status(200).json({ message: 'Review deleted', product: populated });
+  } catch (error) {
+    console.error('deleteReview error', error);
+    return res.status(500).json({ message: 'Failed to delete review' });
+  }
+}
+
+// Update stock for a specific variant and size
+async function updateStock(req, res) {
+  try {
+    const { id, variantId } = req.params;
+    const { size, quantity, action = 'set' } = req.body; // action can be 'set', 'increase', 'decrease'
+
+    if (!size || quantity === undefined) {
+      return res.status(400).json({ message: 'Size and quantity are required' });
+    }
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const variant = product.variants.id(variantId);
+    if (!variant) {
+      return res.status(404).json({ message: 'Variant not found' });
+    }
+
+    const sizeIndex = variant.sizes.indexOf(size);
+    if (sizeIndex === -1) {
+      return res.status(400).json({ message: 'Size not found in variant' });
+    }
+
+    // Initialize stockBySize if it doesn't exist
+    if (!variant.stockBySize) {
+      variant.stockBySize = new Array(variant.sizes.length).fill(0);
+    }
+
+    // Update stock for the specific size based on action
+    const currentStock = variant.stockBySize[sizeIndex] || 0;
+    let newStock;
+
+    switch (action) {
+      case 'increase':
+        newStock = currentStock + quantity;
+        break;
+      case 'decrease':
+        newStock = Math.max(0, currentStock - quantity);
+        break;
+      case 'set':
+      default:
+        newStock = Math.max(0, quantity);
+        break;
+    }
+
+    variant.stockBySize[sizeIndex] = newStock;
+
+    // Update legacy stock field (sum of all sizes)
+    variant.stock = variant.stockBySize.reduce((sum, stock) => sum + stock, 0);
+
+    await product.save();
+
+    // Emit stock update event
+    emitProductUpdate(product._id, 'stock_updated', {
+      variantId: variant._id,
+      size: size,
+      newStock: variant.stockBySize[sizeIndex],
+      totalStock: variant.stock,
+      action: action,
+      product: product
+    });
+
+    return res.status(200).json({
+      message: 'Stock updated successfully',
+      product: product,
+      updatedStock: {
+        size: size,
+        quantity: variant.stockBySize[sizeIndex],
+        totalStock: variant.stock,
+        action: action
+      }
+    });
+  } catch (error) {
+    console.error('updateStock error', error);
+    return res.status(500).json({ message: 'Failed to update stock' });
+  }
+}
+
+// Get stock information for a product
+async function getStock(req, res) {
+  try {
+    const { id } = req.params;
+    const product = await Product.findById(id);
+    
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const stockInfo = product.variants.map(variant => ({
+      variantId: variant._id,
+      colorName: variant.colorName,
+      sizes: variant.sizes.map((size, index) => ({
+        size: size,
+        stock: variant.stockBySize ? variant.stockBySize[index] || 0 : 0
+      })),
+      totalStock: variant.stockBySize ? variant.stockBySize.reduce((sum, stock) => sum + stock, 0) : 0
+    }));
+
+    return res.status(200).json({
+      productId: product._id,
+      productName: product.name,
+      stockInfo: stockInfo
+    });
+  } catch (error) {
+    console.error('getStock error', error);
+    return res.status(500).json({ message: 'Failed to get stock information' });
+  }
+}
+
+// Set Socket.IO instance
+const setSocketIO = (io) => {
+  ioInstance = io;
+};
+
 module.exports = {
   addProduct,
   updateProduct,
+  deleteProduct,
   getProducts,
   getSingleProduct,
-  deleteProduct,
-  deleteVariant
+  deleteVariant,
+  addReview,
+  getReviews,
+  updateReview,
+  deleteReview,
+  updateStock,
+  getStock,
+  setSocketIO
 };

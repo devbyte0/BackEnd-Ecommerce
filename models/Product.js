@@ -1,20 +1,37 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
+const reviewSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  rating: { type: Number, required: true, min: 1, max: 5 },
+  comment: { type: String, default: '' },
+}, { timestamps: true });
+
 const variantSchema = new Schema({
   colorName: String,
   hexCode: String,
   sizes: [String],          // Sizes as an array
   prices: [Number],         // Prices as an array
-  deliveryTimes: [Number],  // Delivery times as an array
-  stock: Number,
+  stock: Number,            // Legacy field - keeping for backward compatibility
+  stockBySize: [Number],    // Stock for each size in the sizes array
   description: String,
   discountPrices: [Number], // Discount prices as an array
   badgeNames: [String],     // Badge names as an array
   badgeColors: [String],    // Badge colors as an array
   images: [String],
   measureType: { type: String, required: true },
-  unitName: { type: String, required: true }
+  unitName: { type: String, required: true },
+  specifications: [{
+    name: String,
+    value: String,
+    unit: String
+  }],
+ 
+  shippingOptions: [{
+    name: String,
+    charge: Number,
+    estimatedDays: Number,
+  }]
 }, { timestamps: true });
 
 const productSchema = new Schema({
@@ -28,7 +45,11 @@ const productSchema = new Schema({
   measureType: { type: String, required: true },
   unitName: { type: String, required: true },
   variants: [variantSchema],
-  mainImage: { type: String, required: true }
+  mainImage: { type: String, required: true },
+  // Reviews
+  reviews: [reviewSchema],
+  averageRating: { type: Number, default: 0 },
+  totalReviews: { type: Number, default: 0 }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Product', productSchema);

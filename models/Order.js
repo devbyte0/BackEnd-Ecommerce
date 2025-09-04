@@ -13,6 +13,12 @@ const orderItemSchema = new mongoose.Schema({
   color: { type: String },
   measureType: { type: String },
   unitName: { type: String },
+  // 🔹 Inventory tracking
+  assignedInventoryItems: [{ 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Inventory' 
+  }], // Array of inventory item IDs assigned to this order item
+  inventoryAssigned: { type: Boolean, default: false }, // Track if inventory has been assigned
 });
 
 // 🔹 Payment details, varies by method
@@ -21,6 +27,13 @@ const paymentDetailsSchema = new mongoose.Schema({
   walletNumberMasked: { type: String, trim: true },
   gatewayTransactionId: { type: String, trim: true },
   codNote: { type: String, trim: true }, // Optional note for Cash on Delivery
+}, { _id: false });
+
+// 🔹 Shipping method (per order)
+const shippingMethodSchema = new mongoose.Schema({
+  name: { type: String, trim: true },
+  charge: { type: Number, default: 0 },
+  estimatedDays: { type: Number, default: 0 },
 }, { _id: false });
 
 // 🔹 Shipping address
@@ -41,6 +54,9 @@ const orderSchema = new mongoose.Schema({
   items: [orderItemSchema],
   totalAmount: { type: Number, required: true },
   discountAmount: { type: Number, default: 0 },
+  shipping: { type: shippingMethodSchema, default: {} },
+  shippingCost: { type: Number, default: 0 },
+  grandTotal: { type: Number, default: 0 },
   couponCode: { type: String, default: null }, // Changed from couponId (ObjectId) to couponCode (String)
   couponId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null }, // Keep both for backward compatibility
   shippingAddress: shippingAddressSchema,
@@ -66,6 +82,12 @@ const orderSchema = new mongoose.Schema({
     default: 'pending',
   },
   isActive: { type: Boolean, default: true },
+  // Email notification tracking
+  emailSent: {
+    type: String,
+    enum: ['confirmation', 'processing', 'shipped', 'delivered', null],
+    default: null
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Order', orderSchema);

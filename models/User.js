@@ -63,6 +63,7 @@ const userSchema = new mongoose.Schema({
   userName: { type: String, required: true, unique: true, trim: true },
   password: { type: String, required: true, minlength: 6 },
   imageUrl: { type: String, required: true },
+  isEmailVerified: { type: Boolean, default: false },
   refreshToken: { type: String },
   accessTokens: [{
   token: { type: String, required: true },

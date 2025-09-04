@@ -27,7 +27,22 @@ router.patch('/orders/:orderId/cancel', authenticate ,  orderController.cancelOr
 // ❌ Cancel order — either
 router.patch('/orders/cancel/:orderId', authenticateAdmin ,  orderController.cancelOrderAdmin);
 
+// 💰 Refund order — admin only
+router.patch('/orders/:orderId/refund', authenticateAdmin, orderController.refundOrder);
+
 // 🗑️ Delete — only super admin
 router.delete('/orders/:orderId', [authenticateAdmin, requireSuperAdmin], orderController.deleteOrder);
+
+// ✏️ Admin edit order (full update)
+router.put('/orders/:orderId', authenticateAdmin, orderController.adminUpdateOrder);
+
+// 🔹 Assign inventory to order item via scanning
+router.post('/orders/:orderId/assign-inventory', authenticateAdmin, orderController.assignInventoryToOrderItem);
+
+// 🔹 Remove inventory from order item
+router.delete('/orders/:orderId/remove-inventory', authenticateAdmin, orderController.removeInventoryFromOrderItem);
+
+// 📧 Send order finalization email
+router.post('/orders/:orderId/send-finalization-email', authenticateAdmin, orderController.sendOrderFinalizationEmail);
 
 module.exports = router;

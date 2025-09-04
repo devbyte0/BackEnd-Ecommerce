@@ -1,6 +1,8 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { createAndSendOTP, verifyOTP, incrementFailedAttempts, resendOTP } = require('../utils/otpService');
+const Cart = require('../models/Cart'); // Added Cart model import
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
@@ -65,12 +67,422 @@ exports.refreshToken = async (req, res) => {
   }
 };
 
+// Send OTP for registration
+exports.sendRegistrationOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      return res.status(400).json({ message: 'Valid email is required' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User with this email already exists' });
+    }
+
+    const result = await createAndSendOTP(email.toLowerCase(), 'registration');
+    
+    if (result.success) {
+      res.json({ message: 'OTP sent successfully. Please check your email.' });
+    } else {
+      res.status(500).json({ message: result.message });
+    }
+  } catch (error) {
+    console.error('Error sending registration OTP:', error);
+    res.status(500).json({ message: 'Error sending OTP' });
+  }
+};
+
+// Verify OTP and register user
+exports.verifyOTPAndRegister = async (req, res) => {
+  try {
+    const { firstName, lastName, email, userName, password, phoneNumber, otp } = req.body;
+
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password || !phoneNumber || !otp) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Check if phoneNumber is provided and not empty
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+      return res.status(400).json({ 
+        message: 'Valid phone number is required',
+        field: 'phoneNumber'
+      });
+    }
+
+    // Phone number validation - more flexible
+    const phoneRegex = /^(\+880|880|0)?1[3-9]\d{8}$/;
+    
+    // Trim the phone number to remove any whitespace
+    const trimmedPhoneNumber = phoneNumber.trim();
+    
+    if (!phoneRegex.test(trimmedPhoneNumber)) {
+      return res.status(400).json({ 
+        message: 'Invalid Bangladeshi phone number format. Please use format: 01XXXXXXXXX or +8801XXXXXXXXX',
+        field: 'phoneNumber',
+        debug: {
+          input: phoneNumber,
+          trimmed: trimmedPhoneNumber,
+          length: trimmedPhoneNumber.length,
+          pattern: 'Expected: /^(\\+880|880|0)?1[3-9]\\d{8}$/'
+        }
+      });
+    }
+    
+    // Normalize phone number to +880 format
+    let normalizedPhone = trimmedPhoneNumber;
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = '+880' + normalizedPhone.substring(1);
+    } else if (normalizedPhone.startsWith('880')) {
+      normalizedPhone = '+' + normalizedPhone;
+    } else if (!normalizedPhone.startsWith('+880')) {
+      normalizedPhone = '+880' + normalizedPhone;
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User with this email already exists' });
+    }
+
+    // Verify OTP first (don't mark as used yet)
+    const otpResult = await verifyOTP(email.toLowerCase(), otp, 'registration', false);
+    
+    if (!otpResult.success) {
+      // Increment failed attempts
+      await incrementFailedAttempts(email.toLowerCase(), otp, 'registration');
+      return res.status(400).json({ message: otpResult.message });
+    }
+
+    try {
+      // Create user
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const fullName = `${firstName} ${lastName}`.trim();
+      const profileImageUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}`;
+
+      const user = await User.create({
+        firstName,
+        lastName,
+        fullName,
+        email: email.toLowerCase(),
+        userName: userName || `${firstName}.${lastName}`.toLowerCase().replace(/\s+/g, ''),
+        password: hashedPassword,
+        phoneNumber: normalizedPhone,
+        imageUrl: profileImageUrl,
+        isEmailVerified: true, // Mark as verified since OTP was verified
+      });
+
+      const { accessToken, refreshToken } = generateTokens(user._id);
+      user.refreshToken = refreshToken;
+
+      user.accessTokens = [{
+        token: accessToken,
+        issuedAt: new Date(),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      }];
+
+      await user.save();
+
+      // Now mark the OTP as used since registration was successful
+      await verifyOTP(email.toLowerCase(), otp, 'registration', true);
+
+      res.status(201).json({ 
+        message: 'User registered successfully', 
+        accessToken, 
+        refreshToken, 
+        user: {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          fullName: user.fullName,
+          email: user.email,
+          userName: user.userName,
+          phoneNumber: user.phoneNumber,
+          imageUrl: user.imageUrl,
+          isEmailVerified: user.isEmailVerified
+        }
+      });
+    } catch (userCreationError) {
+      console.error('Error creating user after OTP verification:', userCreationError);
+      res.status(500).json({ message: 'Error creating user account' });
+    }
+  } catch (error) {
+    console.error('Error registering user with OTP:', error);
+    res.status(500).json({ message: 'Error registering user' });
+  }
+};
+
+// Resend OTP
+exports.resendOTP = async (req, res) => {
+  try {
+    const { email, type = 'registration' } = req.body;
+
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      return res.status(400).json({ message: 'Valid email is required' });
+    }
+
+    const result = await resendOTP(email.toLowerCase(), type);
+    
+    if (result.success) {
+      res.json({ message: 'OTP resent successfully. Please check your email.' });
+    } else {
+      res.status(400).json({ message: result.message });
+    }
+  } catch (error) {
+    console.error('Error resending OTP:', error);
+    res.status(500).json({ message: 'Error resending OTP' });
+  }
+};
+
+// Send email verification OTP
+exports.sendEmailVerificationOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      return res.status(400).json({ message: 'Valid email is required' });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if email is already verified
+    if (user.isEmailVerified) {
+      return res.status(400).json({ message: 'Email is already verified' });
+    }
+
+    const result = await createAndSendOTP(email.toLowerCase(), 'email_verification');
+    
+    if (result.success) {
+      res.json({ message: 'Email verification OTP sent successfully. Please check your email.' });
+    } else {
+      res.status(500).json({ message: result.message });
+    }
+  } catch (error) {
+    console.error('Error sending email verification OTP:', error);
+    res.status(500).json({ message: 'Error sending OTP' });
+  }
+};
+
+// Verify email with OTP
+exports.verifyEmailWithOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if email is already verified
+    if (user.isEmailVerified) {
+      return res.status(400).json({ message: 'Email is already verified' });
+    }
+
+    const otpResult = await verifyOTP(email.toLowerCase(), otp, 'email_verification');
+    
+    if (!otpResult.success) {
+      await incrementFailedAttempts(email.toLowerCase(), otp, 'email_verification');
+      return res.status(400).json({ message: otpResult.message });
+    }
+
+    // Mark email as verified
+    user.isEmailVerified = true;
+    await user.save();
+
+    res.json({ 
+      message: 'Email verified successfully',
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: user.isEmailVerified
+      }
+    });
+  } catch (error) {
+    console.error('Error verifying email:', error);
+    res.status(500).json({ message: 'Error verifying email' });
+  }
+};
+
+// Verify OTP without password reset (for password reset flow)
+exports.verifyOTP = async (req, res) => {
+  try {
+    const { email, otp, type = 'password_reset' } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User with this email not found' });
+    }
+
+    // Verify OTP but don't mark as used yet (for password reset flow)
+    const otpResult = await verifyOTP(email.toLowerCase(), otp, type, false);
+    
+    if (!otpResult.success) {
+      // Increment failed attempts
+      await incrementFailedAttempts(email.toLowerCase(), otp, type);
+      return res.status(400).json({ message: otpResult.message });
+    }
+
+    res.json({ message: 'OTP verified successfully' });
+  } catch (error) {
+    console.error('Error verifying OTP:', error);
+    res.status(500).json({ message: 'Error verifying OTP' });
+  }
+};
+
+// Send forgot password OTP
+exports.sendForgotPasswordOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      return res.status(400).json({ message: 'Valid email is required' });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User with this email not found' });
+    }
+
+    const result = await createAndSendOTP(email.toLowerCase(), 'password_reset');
+    
+    if (result.success) {
+      res.json({ message: 'Password reset OTP sent successfully. Please check your email.' });
+    } else {
+      res.status(500).json({ message: result.message });
+    }
+  } catch (error) {
+    console.error('Error sending forgot password OTP:', error);
+    res.status(500).json({ message: 'Error sending OTP' });
+  }
+};
+
+// Verify forgot password OTP and reset password
+exports.verifyForgotPasswordOTP = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: 'Email, OTP, and new password are required' });
+    }
+
+    // Password validation
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        message: 'Password must be at least 6 characters long',
+        field: 'newPassword',
+        minLength: 6,
+        currentLength: newPassword.length
+      });
+    }
+
+    // Optional: Add more password strength requirements
+    if (newPassword.length > 128) {
+      return res.status(400).json({ 
+        message: 'Password must be less than 128 characters',
+        field: 'newPassword',
+        maxLength: 128,
+        currentLength: newPassword.length
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User with this email not found' });
+    }
+
+    // Verify OTP
+    const otpResult = await verifyOTP(email.toLowerCase(), otp, 'password_reset');
+    
+    if (!otpResult.success) {
+      // Increment failed attempts
+      await incrementFailedAttempts(email.toLowerCase(), otp, 'password_reset');
+      return res.status(400).json({ message: otpResult.message });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user password
+    user.password = hashedPassword;
+    
+    // Clear all access tokens for security
+    user.accessTokens = [];
+    user.refreshToken = null;
+    
+    await user.save();
+
+    res.json({ message: 'Password reset successfully. Please login with your new password.' });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(500).json({ message: 'Error resetting password' });
+  }
+};
+
+// Legacy register function (for backward compatibility)
 exports.register = async (req, res) => {
   try {
     const { firstName, lastName, email, userName, password, phoneNumber } = req.body;
 
-    if (!/^\+8801[3-9]\d{8}$/.test(phoneNumber)) {
-      return res.status(400).json({ message: 'Invalid Bangladeshi phone number format' });
+    // Check if phoneNumber is provided
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        message: 'Phone number is required',
+        field: 'phoneNumber'
+      });
+    }
+
+    // Phone number validation - more flexible
+    const phoneRegex = /^(\+880|880|0)?1[3-9]\d{8}$/;
+    
+    // Trim the phone number to remove any whitespace
+    const trimmedPhoneNumber = phoneNumber.trim();
+    
+    if (!phoneRegex.test(trimmedPhoneNumber)) {
+      return res.status(400).json({ 
+        message: 'Invalid Bangladeshi phone number format. Please use format: 01XXXXXXXXX or +8801XXXXXXXXX',
+        field: 'phoneNumber',
+        debug: {
+          input: phoneNumber,
+          trimmed: trimmedPhoneNumber,
+          length: trimmedPhoneNumber.length,
+          pattern: 'Expected: /^(\\+880|880|0)?1[3-9]\\d{8}$/'
+        }
+      });
+    }
+    
+    // Normalize phone number to +880 format
+    let normalizedPhone = trimmedPhoneNumber;
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = '+880' + normalizedPhone.substring(1);
+    } else if (normalizedPhone.startsWith('880')) {
+      normalizedPhone = '+' + normalizedPhone;
+    } else if (!normalizedPhone.startsWith('+880')) {
+      normalizedPhone = '+880' + normalizedPhone;
     }
 
     const existingUser = await User.findOne({ email });
@@ -87,7 +499,7 @@ exports.register = async (req, res) => {
       email,
       userName,
       password: hashedPassword,
-      phoneNumber,
+      phoneNumber: normalizedPhone,
       imageUrl: profileImageUrl,
     });
 
@@ -166,8 +578,58 @@ exports.updateProfile = async (req, res) => {
     delete updatedData.password;
     delete updatedData.refreshToken;
 
-    if (updatedData.phoneNumber && !/^\+8801[3-9]\d{8}$/.test(updatedData.phoneNumber)) {
-      return res.status(400).json({ message: 'Invalid Bangladeshi phone number format' });
+    if (updatedData.phoneNumber) {
+      // Check if phoneNumber is a valid string
+      if (typeof updatedData.phoneNumber !== 'string') {
+        return res.status(400).json({ 
+          message: 'Phone number must be a valid string',
+          field: 'phoneNumber'
+        });
+      }
+
+      // Trim the phone number to remove any whitespace
+      updatedData.phoneNumber = updatedData.phoneNumber.trim();
+      
+      // Check if phone number is empty after trimming
+      if (!updatedData.phoneNumber) {
+        return res.status(400).json({ 
+          message: 'Phone number cannot be empty',
+          field: 'phoneNumber'
+        });
+      }
+      
+      // Phone number validation - more flexible
+      const phoneRegex = /^(\+880|880|0)?1[3-9]\d{8}$/;
+      
+      // Debug logging
+      console.log('🔍 Phone number validation debug:');
+      console.log('  - Input phone number:', updatedData.phoneNumber);
+      console.log('  - Phone number type:', typeof updatedData.phoneNumber);
+      console.log('  - Phone number length:', updatedData.phoneNumber.length);
+      console.log('  - Regex test result:', phoneRegex.test(updatedData.phoneNumber));
+      
+      if (!phoneRegex.test(updatedData.phoneNumber)) {
+        return res.status(400).json({ 
+          message: 'Invalid Bangladeshi phone number format. Please use format: 01XXXXXXXXX or +8801XXXXXXXXX',
+          field: 'phoneNumber',
+          debug: {
+            input: updatedData.phoneNumber,
+            length: updatedData.phoneNumber.length,
+            pattern: 'Expected: /^(\\+880|880|0)?1[3-9]\\d{8}$/'
+          }
+        });
+      }
+      
+      // Normalize phone number to +880 format
+      let normalizedPhone = updatedData.phoneNumber;
+      if (normalizedPhone.startsWith('0')) {
+        normalizedPhone = '+880' + normalizedPhone.substring(1);
+      } else if (normalizedPhone.startsWith('880')) {
+        normalizedPhone = '+' + normalizedPhone;
+      } else if (!normalizedPhone.startsWith('+880')) {
+        normalizedPhone = '+880' + normalizedPhone;
+      }
+      updatedData.phoneNumber = normalizedPhone;
     }
 
     if (updatedData.email) {
@@ -328,5 +790,350 @@ exports.deleteUser = async (req, res) => {
   } catch (error) {
     console.error('Error deleting user:', error);
     res.status(500).json({ message: 'Error deleting user', error });
+  }
+};
+
+// 👨‍💼 Admin Functions for User Management
+
+// Get all users (admin only)
+exports.getAllUsers = async (req, res) => {
+  try {
+    console.log('🔍 getAllUsers called by admin:', req.admin._id);
+    
+    // Fetch all users
+    const users = await User.find({})
+      .select('-password -refreshToken -accessTokens')
+      .lean();
+
+    console.log(`📊 Found ${users.length} users`);
+
+    // Fetch all carts
+    const carts = await Cart.find({})
+      .populate({
+        path: 'items.productId',
+        select: 'name price imageUrl'
+      })
+      .lean();
+
+    console.log(`🛒 Found ${carts.length} carts`);
+
+    // Create a map of userId to cart
+    const cartMap = new Map();
+    carts.forEach(cart => {
+      cartMap.set(cart.userId.toString(), cart);
+    });
+
+    // Process users to include cart information
+    const processedUsers = users.map(user => {
+      const userCart = cartMap.get(user._id.toString());
+      const hasCart = userCart && userCart.items && userCart.items.length > 0;
+      
+      return {
+        ...user,
+        cart: userCart || null,
+        hasCart,
+        cartItemsCount: hasCart ? userCart.items.length : 0,
+        cartTotal: hasCart ? userCart.totalAmount : 0
+      };
+    });
+
+    console.log(`✅ Processed ${processedUsers.length} users with cart data`);
+    res.status(200).json(processedUsers);
+  } catch (error) {
+    console.error('❌ Error in getAllUsers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users',
+      error: error.message
+    });
+  }
+};
+
+// Get specific user by ID (admin only)
+exports.getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId)
+      .select('-password -refreshToken -accessTokens')
+      .populate('paymentMethods');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error('Error fetching user by ID:', error);
+    res.status(500).json({ message: 'Error fetching user', error: error.message });
+  }
+};
+
+// Update user by admin (admin only)
+exports.updateUserByAdmin = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updatedData = { ...req.body };
+
+    // Remove sensitive fields that shouldn't be updated by admin
+    delete updatedData.password;
+    delete updatedData.refreshToken;
+    delete updatedData.accessTokens;
+
+    if (updatedData.phoneNumber) {
+      // Check if phoneNumber is a valid string
+      if (typeof updatedData.phoneNumber !== 'string') {
+        return res.status(400).json({ 
+          message: 'Phone number must be a valid string',
+          field: 'phoneNumber'
+        });
+      }
+
+      // Trim the phone number to remove any whitespace
+      updatedData.phoneNumber = updatedData.phoneNumber.trim();
+      
+      // Check if phone number is empty after trimming
+      if (!updatedData.phoneNumber) {
+        return res.status(400).json({ 
+          message: 'Phone number cannot be empty',
+          field: 'phoneNumber'
+        });
+      }
+      
+      // Phone number validation - more flexible
+      const phoneRegex = /^(\+880|880|0)?1[3-9]\d{8}$/;
+      
+      if (!phoneRegex.test(updatedData.phoneNumber)) {
+        return res.status(400).json({ 
+          message: 'Invalid Bangladeshi phone number format. Please use format: 01XXXXXXXXX or +8801XXXXXXXXX',
+          field: 'phoneNumber'
+        });
+      }
+      
+      // Normalize phone number to +880 format
+      let normalizedPhone = updatedData.phoneNumber;
+      if (normalizedPhone.startsWith('0')) {
+        normalizedPhone = '+880' + normalizedPhone.substring(1);
+      } else if (normalizedPhone.startsWith('880')) {
+        normalizedPhone = '+' + normalizedPhone;
+      } else if (!normalizedPhone.startsWith('+880')) {
+        normalizedPhone = '+880' + normalizedPhone;
+      }
+      updatedData.phoneNumber = normalizedPhone;
+    }
+
+    if (updatedData.email) {
+      updatedData.email = updatedData.email.toLowerCase().trim();
+    }
+
+    if (updatedData.firstName || updatedData.lastName) {
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const nextFirst = updatedData.firstName || user.firstName;
+      const nextLast = updatedData.lastName || user.lastName;
+      const fullName = `${nextFirst} ${nextLast}`.trim();
+      updatedData.fullName = fullName;
+      updatedData.imageUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}`;
+    }
+
+    const user = await User.findByIdAndUpdate(userId, updatedData, {
+      new: true,
+      runValidators: true,
+    }).select('-password -refreshToken -accessTokens');
+
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    res.json({ message: 'User updated successfully', user });
+  } catch (error) {
+    console.error('Error updating user by admin:', error);
+    res.status(500).json({ message: 'Error updating user', error: error.message });
+  }
+};
+
+// Delete user by admin (admin only)
+exports.deleteUserByAdmin = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findByIdAndDelete(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user by admin:', error);
+    res.status(500).json({ message: 'Error deleting user', error: error.message });
+  }
+};
+
+// 🔐 Update password with current password verification
+exports.updatePassword = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+
+    // Password validation
+    if (newPassword.length < 8) {
+      return res.status(400).json({ 
+        message: 'Password must be at least 8 characters long',
+        field: 'newPassword'
+      });
+    }
+
+    // Check for password strength
+    const hasLowercase = /[a-z]/.test(newPassword);
+    const hasUppercase = /[A-Z]/.test(newPassword);
+    const hasNumber = /\d/.test(newPassword);
+
+    if (!hasLowercase || !hasUppercase || !hasNumber) {
+      return res.status(400).json({ 
+        message: 'Password must contain at least one lowercase letter, one uppercase letter, and one number',
+        field: 'newPassword'
+      });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    // Check if new password is same as current
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ message: 'New password must be different from current password' });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    user.password = hashedPassword;
+    
+    // Clear all access tokens for security (force re-login)
+    user.accessTokens = [];
+    user.refreshToken = null;
+    
+    await user.save();
+
+    res.json({ message: 'Password updated successfully. Please login again with your new password.' });
+  } catch (error) {
+    console.error('Error updating password:', error);
+    res.status(500).json({ message: 'Error updating password', error: error.message });
+  }
+};
+
+// 📧 Send email update OTP
+exports.sendEmailUpdateOTP = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { newEmail } = req.body;
+
+    if (!newEmail || !/\S+@\S+\.\S+/.test(newEmail)) {
+      return res.status(400).json({ message: 'Valid email is required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if new email is same as current
+    if (user.email.toLowerCase() === newEmail.toLowerCase()) {
+      return res.status(400).json({ message: 'New email must be different from current email' });
+    }
+
+    // Check if new email is already taken
+    const existingUser = await User.findOne({ email: newEmail.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email is already in use by another account' });
+    }
+
+    // Send OTP to new email
+    const result = await createAndSendOTP(newEmail.toLowerCase(), 'email_change');
+    
+    if (result.success) {
+      res.json({ message: 'Email update OTP sent successfully. Please check your new email.' });
+    } else {
+      res.status(500).json({ message: result.message });
+    }
+  } catch (error) {
+    console.error('Error sending email update OTP:', error);
+    res.status(500).json({ message: 'Error sending OTP', error: error.message });
+  }
+};
+
+// 📧 Update email with OTP verification
+exports.updateEmail = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { newEmail, otp } = req.body;
+
+    if (!newEmail || !otp) {
+      return res.status(400).json({ message: 'New email and OTP are required' });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if new email is same as current
+    if (user.email.toLowerCase() === newEmail.toLowerCase()) {
+      return res.status(400).json({ message: 'New email must be different from current email' });
+    }
+
+    // Check if new email is already taken
+    const existingUser = await User.findOne({ email: newEmail.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email is already in use by another account' });
+    }
+
+    // Verify OTP
+    const otpResult = await verifyOTP(newEmail.toLowerCase(), otp, 'email_change');
+    
+    if (!otpResult.success) {
+      // Increment failed attempts
+      await incrementFailedAttempts(newEmail.toLowerCase(), otp, 'email_change');
+      return res.status(400).json({ message: otpResult.message });
+    }
+
+    // Update email
+    user.email = newEmail.toLowerCase();
+    user.isEmailVerified = true; // Mark as verified since OTP was verified
+    
+    // Clear all access tokens for security (force re-login)
+    user.accessTokens = [];
+    user.refreshToken = null;
+    
+    await user.save();
+
+    res.json({ 
+      message: 'Email updated successfully. Please login again with your new email.',
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: user.isEmailVerified
+      }
+    });
+  } catch (error) {
+    console.error('Error updating email:', error);
+    res.status(500).json({ message: 'Error updating email', error: error.message });
   }
 };

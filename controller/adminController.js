@@ -34,10 +34,19 @@ exports.verifyToken = async (req, res) => {
 // 🚪 Logout admin
 exports.logout = async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
-  const admin = await Admin.findById(req.admin._id);
+  
+  if (!token) {
+    return res.status(400).json({ message: 'Token is required' });
+  }
 
-  admin.accessTokens = admin.accessTokens.filter(t => t.token !== token);
-  await admin.save();
+  await Admin.findByIdAndUpdate(
+    req.admin._id,
+    {
+      $pull: {
+        accessTokens: { token: token }
+      }
+    }
+  );
 
   res.json({ message: 'Logged out successfully' });
 };
@@ -57,14 +66,36 @@ exports.refreshToken = async (req, res) => {
 
     const accessToken = jwt.sign({ adminId: decoded.adminId }, JWT_SECRET, { expiresIn: '1h' });
 
-    admin.accessTokens = (admin.accessTokens || []).filter(t => t.expiresAt > Date.now());
-    admin.accessTokens.push({
-      token: accessToken,
-      issuedAt: new Date(),
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    });
+    // First, remove expired tokens
+    await Admin.findByIdAndUpdate(
+      decoded.adminId,
+      {
+        $pull: {
+          accessTokens: {
+            expiresAt: { $lte: new Date() }
+          }
+        }
+      }
+    );
 
-    await admin.save();
+    // Then, add the new token
+    const updatedAdmin = await Admin.findByIdAndUpdate(
+      decoded.adminId,
+      {
+        $push: {
+          accessTokens: {
+            token: accessToken,
+            issuedAt: new Date(),
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          }
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedAdmin) {
+      return res.status(403).json({ message: 'Admin not found' });
+    }
 
     res.json({ accessToken });
   } catch (error) {
@@ -100,16 +131,26 @@ exports.register = async (req, res) => {
     });
 
     const { accessToken, refreshToken } = generateTokens(admin._id);
-    admin.refreshToken = refreshToken;
-    admin.accessTokens = [{
-      token: accessToken,
-      issuedAt: new Date(),
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    }];
+    
+    // Update admin with tokens
+    const updatedAdmin = await Admin.findByIdAndUpdate(
+      admin._id,
+      {
+        refreshToken: refreshToken,
+        accessTokens: [{
+          token: accessToken,
+          issuedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        }]
+      },
+      { new: true, runValidators: true }
+    );
 
-    await admin.save();
+    if (!updatedAdmin) {
+      return res.status(500).json({ message: 'Failed to update admin session' });
+    }
 
-    res.status(201).json({ message: 'Admin registered successfully', accessToken, refreshToken, admin });
+    res.status(201).json({ message: 'Admin registered successfully', accessToken, refreshToken, admin: updatedAdmin });
   } catch (error) {
     console.error('Error registering admin:', error);
     res.status(500).json({ message: 'Registration failed', error });
@@ -139,17 +180,39 @@ exports.login = async (req, res) => {
 
     const { accessToken, refreshToken } = generateTokens(admin._id);
 
-    admin.refreshToken = refreshToken;
-    admin.accessTokens = (admin.accessTokens || []).filter(t => t.expiresAt > Date.now());
-    admin.accessTokens.push({
-      token: accessToken,
-      issuedAt: new Date(),
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    });
+    // First, remove expired tokens
+    await Admin.findByIdAndUpdate(
+      admin._id,
+      {
+        $pull: {
+          accessTokens: {
+            expiresAt: { $lte: new Date() }
+          }
+        }
+      }
+    );
 
-    await admin.save();
+    // Then, add the new token and update refresh token
+    const updatedAdmin = await Admin.findByIdAndUpdate(
+      admin._id,
+      {
+        refreshToken: refreshToken,
+        $push: {
+          accessTokens: {
+            token: accessToken,
+            issuedAt: new Date(),
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          }
+        }
+      },
+      { new: true, runValidators: true }
+    );
 
-    res.json({ message: 'Login successful', accessToken, refreshToken, admin });
+    if (!updatedAdmin) {
+      return res.status(500).json({ message: 'Failed to update admin session' });
+    }
+
+    res.json({ message: 'Login successful', accessToken, refreshToken, admin: updatedAdmin });
   } catch (error) {
     console.error('Error logging in:', error);
     res.status(500).json({ message: 'Login failed', error });
@@ -173,9 +236,7 @@ exports.createAdmin = async (req, res) => {
       return res.status(400).json({ message: `${userNameTrimmed} or ${emailTrimmed} is already taken` });
     }
 
-    const hashedPassword = await bcrypt.hash(password.trim(), saltRounds);
-    const { accessToken, refreshToken } = generateTokens();
-
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
     const imageUrl = req.file?.path || `https://ui-avatars.com/api/?name=${encodeURIComponent(firstName + ' ' + lastName)}`;
 
     const admin = await Admin.create({
@@ -186,15 +247,26 @@ exports.createAdmin = async (req, res) => {
       password: hashedPassword,
       imageUrl,
       superAdmin: !!superAdmin,
-      refreshToken,
-      accessTokens: [{
-        token: accessToken,
-        issuedAt: new Date(),
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-      }],
     });
 
-    res.status(201).json({ message: 'Admin created successfully', admin, accessToken, refreshToken });
+    // Generate tokens after creating the admin
+    const { accessToken, refreshToken } = generateTokens(admin._id);
+
+    // Update admin with tokens
+    const updatedAdmin = await Admin.findByIdAndUpdate(
+      admin._id,
+      {
+        refreshToken,
+        accessTokens: [{
+          token: accessToken,
+          issuedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        }],
+      },
+      { new: true }
+    );
+
+    res.status(201).json({ message: 'Admin created successfully', admin: updatedAdmin, accessToken, refreshToken });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -229,7 +301,7 @@ exports.updateAdmin = async (req, res) => {
 
     if (firstName) updates.firstName = firstName.trim().toUpperCase();
     if (lastName) updates.lastName = lastName.trim().toUpperCase();
-    if (password) updates.password = await bcrypt.hash(password.trim(), saltRounds);
+    if (password) updates.password = await bcrypt.hash(password.trim(), 10);
     if (req.file) updates.imageUrl = req.file.path;
     if (superAdmin !== undefined) updates.superAdmin = !!superAdmin;
 
@@ -250,6 +322,12 @@ exports.deleteAdmin = async (req, res) => {
     }
 
     const { deleteAdminId } = req.body;
+    
+    // Prevent super admin from deleting themselves
+    if (deleteAdminId === req.admin._id.toString()) {
+      return res.status(400).json({ message: 'You cannot delete your own account' });
+    }
+
     const deleted = await Admin.findByIdAndDelete(deleteAdminId);
     if (!deleted) return res.status(404).json({ message: 'Admin not found' });
 

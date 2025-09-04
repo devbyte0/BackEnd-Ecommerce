@@ -7,11 +7,18 @@ const {
   updateProduct,
   deleteProduct,
   getSingleProduct,
-  deleteVariant
+  deleteVariant,
+  addReview,
+  getReviews,
+  updateReview,
+  deleteReview,
+  updateStock,
+  getStock
 } = require('../controller/productController');
 
 
 const { authenticateAdmin  } = require('../middleware/AdminAuthMiddleware');
+const authenticateUser = require('../middleware/UserAuthMiddleware');
 
 // 📥 Create product — authenticated admin
 router.post(
@@ -31,6 +38,11 @@ router.post(
 
 router.get('/products',  getProducts);
 router.get('/products/:id',  getSingleProduct);
+// Reviews
+router.get('/products/:id/reviews', getReviews);
+router.post('/products/:id/reviews', authenticateUser, addReview);
+router.put('/products/:id/reviews/:reviewId', authenticateUser, updateReview);
+router.delete('/products/:id/reviews/:reviewId', authenticateUser, deleteReview);
 
 // ✏️ Update product — authenticated admin
 router.put(
@@ -52,5 +64,9 @@ router.delete('/products/:id', authenticateAdmin, deleteProduct);
 
 // 🧹 Delete variant — super admin only
 router.delete('/products/varients/:id', authenticateAdmin,  deleteVariant);
+
+// 📦 Stock management routes
+router.get('/products/:id/stock', getStock);
+router.put('/products/:id/variants/:variantId/stock', authenticateAdmin, updateStock);
 
 module.exports = router;

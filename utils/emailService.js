@@ -1,0 +1,930 @@
+const nodemailer = require('nodemailer');
+
+// Email configuration
+const transporter = nodemailer.createTransport({
+  service: process.env.EMAIL_SERVICE || 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD
+  }
+});
+
+// Helper function to format currency
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('en-BD', {
+    style: 'currency',
+    currency: 'BDT',
+    minimumFractionDigits: 2
+  }).format(amount);
+};
+
+// Helper function to format date
+const formatDate = (date) => {
+  return new Date(date).toLocaleDateString('en-BD', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+// Email templates
+const emailTemplates = {
+  orderConfirmation: (order, user) => ({
+    subject: `Order Confirmation - Order #${order.orderId}`,
+    html: `
+             <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+         <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 20px; text-align: center; color: white;">
+           <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+             <img src="https://barvella.com/Barvella.png" alt="Barvella Logo" style="width: 60px; height: 60px; object-fit: contain;">
+             <h1 style="margin: 0;">Barvella</h1>
+           </div>
+           <p style="margin: 5px 0;">Premium Fashion & Lifestyle</p>
+         </div>
+         
+         <div style="padding: 20px; background: #f8f9fa;">
+           <h2 style="color: #d97706;">Order Confirmation</h2>
+          <p>Dear ${user?.firstName || ''} ${user?.lastName || ''},</p>
+          <p>Thank you for your order! We're excited to confirm that your order has been received and is being processed.</p>
+          
+          <!-- Order Summary -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+            <h3 style="color: #d97706; margin-top: 0;">Order Summary</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div>
+                <p><strong>Order ID:</strong> #${order.orderId}</p>
+                <p><strong>Order Date:</strong> ${formatDate(order.createdAt)}</p>
+                <p><strong>Order Status:</strong> <span style="color: #f59e0b; font-weight: bold; text-transform: uppercase;">${order.orderStatus}</span></p>
+                <p><strong>Payment Status:</strong> <span style="color: ${order.paymentStatus === 'completed' ? '#059669' : '#f59e0b'}; font-weight: bold; text-transform: uppercase;">${order.paymentStatus}</span></p>
+              </div>
+              <div>
+                <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
+                ${order.paymentDetails.trxId ? `<p><strong>Transaction ID:</strong> ${order.paymentDetails.trxId}</p>` : ''}
+                ${order.paymentDetails.walletNumberMasked ? `<p><strong>Wallet:</strong> ${order.paymentDetails.walletNumberMasked}</p>` : ''}
+                ${order.paymentDetails.codNote ? `<p><strong>COD Note:</strong> ${order.paymentDetails.codNote}</p>` : ''}
+              </div>
+            </div>
+          </div>
+
+                                           <!-- Pricing Details -->
+            <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="color: #d97706; margin-top: 0;">Pricing Details</h3>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+                <div>
+                  <p><strong>Subtotal:</strong> ${formatCurrency(order.totalAmount)}</p>
+                  ${order.discountAmount > 0 ? `<p><strong>Discount:</strong> -${formatCurrency(order.discountAmount)}</p>` : ''}
+                  <p><strong>Shipping Cost:</strong> ${formatCurrency(order.shippingCost || 0)}</p>
+                </div>
+                <div style="text-align: right;">
+                  <p><strong>Grand Total:</strong> ${formatCurrency(order.grandTotal)}</p>
+                  ${order.couponCode ? `<p><strong>Coupon Applied:</strong> ${order.couponCode}</p>` : ''}
+                </div>
+              </div>
+            </div>
+          
+          <!-- Shipping Information -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #d97706; margin-top: 0;">Shipping Information</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+              <div>
+                <h4 style="color: #374151; margin-top: 0;">Delivery Address</h4>
+                <p style="margin: 5px 0;"><strong>${order.shippingAddress.fullName}</strong></p>
+                <p style="margin: 5px 0;">${order.shippingAddress.address}</p>
+                <p style="margin: 5px 0;">${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postalCode}</p>
+                <p style="margin: 5px 0;">${order.shippingAddress.country}</p>
+                <p style="margin: 5px 0;"><strong>Phone:</strong> ${order.shippingAddress.phone}</p>
+              </div>
+              <div>
+                <h4 style="color: #374151; margin-top: 0;">Shipping Method</h4>
+                ${order.shipping.name ? `
+                  <p style="margin: 5px 0;"><strong>Method:</strong> ${order.shipping.name}</p>
+                  <p style="margin: 5px 0;"><strong>Cost:</strong> ${formatCurrency(order.shipping.charge)}</p>
+                  <p style="margin: 5px 0;"><strong>Estimated Delivery:</strong> ${order.shipping.estimatedDays} days</p>
+                ` : '<p style="margin: 5px 0; color: #666;">Standard shipping</p>'}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Order Items -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #d97706; margin-top: 0;">Order Items (${order.items.length} item${order.items.length > 1 ? 's' : ''})</h3>
+            ${order.items.map((item, index) => `
+              <div style="border-bottom: 1px solid #eee; padding: 15px 0; ${index === order.items.length - 1 ? 'border-bottom: none;' : ''}">
+                <div style="display: flex; gap: 15px; align-items: start;">
+                  <div style="width: 100px; height: 100px; background: #f3f4f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #e5e7eb;">
+                    ${item.mainImage ? `<img src="${item.mainImage}" alt="${item.name}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px; max-width: 100%; max-height: 100%;">` : '<span style="color: #9ca3af;">No Image</span>'}
+                  </div>
+                  <div style="flex: 1;">
+                    <h4 style="margin: 0 0 8px 0; color: #374151;">${item.name}</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px; color: #6b7280;">
+                      <div>
+                        <p style="margin: 3px 0;"><strong>Quantity:</strong> ${item.quantity}</p>
+                        <p style="margin: 3px 0;"><strong>Unit Price:</strong> ${formatCurrency(item.price)}</p>
+                        ${item.discountApplied > 0 ? `<p style="margin: 3px 0;"><strong>Discount:</strong> -${formatCurrency(item.discountApplied)}</p>` : ''}
+                      </div>
+                                             <div>
+                         ${item.size ? `<p style="margin: 3px 0;"><strong>${item.measureType || 'Size'}:</strong> ${item.size} ${item.unitName || ''}</p>` : ''}
+                         ${item.color ? `<p style="margin: 3px 0;"><strong>Color:</strong> ${item.color}</p>` : ''}
+                       </div>
+                    </div>
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #f3f4f6;">
+                      <p style="margin: 0; font-weight: bold; color: #d97706;">
+                        <strong>Item Total:</strong> ${formatCurrency(item.price * item.quantity)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+                                           <!-- Order Summary -->
+            <div style="background: #fefce8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+              <h4 style="color: #d97706; margin-top: 0;">Order Summary</h4>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                <div>
+                  <p style="margin: 5px 0;"><strong>Total Items:</strong> ${order.items.reduce((sum, item) => sum + item.quantity, 0)}</p>
+                  <p style="margin: 5px 0;"><strong>Subtotal:</strong> ${formatCurrency(order.totalAmount)}</p>
+                  ${order.discountAmount > 0 ? `<p style="margin: 5px 0;"><strong>Discount:</strong> -${formatCurrency(order.discountAmount)}</p>` : ''}
+                  <p style="margin: 5px 0;"><strong>Shipping:</strong> ${formatCurrency(order.shippingCost || 0)}</p>
+                </div>
+                <div style="text-align: right;">
+                  <p style="margin: 5px 0; font-size: 18px; font-weight: bold; color: #d97706;">
+                    <strong>Grand Total:</strong> ${formatCurrency(order.grandTotal)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          
+          <p>We'll keep you updated on the status of your order. You can track your order by logging into your account.</p>
+          
+          <!-- Order Tracking Link -->
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.CLIENT_URL}/profile/orders/${order.orderId}" 
+               style="display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+              📋 View Order Details
+            </a>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <p style="color: #d97706; font-weight: bold;">Thank you for choosing Barvella!</p>
+          </div>
+        </div>
+        
+        <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+          <p>© ${new Date().getFullYear()} Barvella. All rights reserved.</p>
+          <p>This is an automated email. Please do not reply to this message.</p>
+        </div>
+      </div>
+    `
+  }),
+
+  orderProcessing: (order, user) => ({
+    subject: `Order Processing - Order #${order.orderId}`,
+    html: `
+             <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+         <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 20px; text-align: center; color: white;">
+           <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+             <img src="https://barvella.com/Barvella.png" alt="Barvella Logo" style="width: 60px; height: 60px; object-fit: contain;">
+             <h1 style="margin: 0;">Barvella</h1>
+           </div>
+           <p style="margin: 5px 0;">Premium Fashion & Lifestyle</p>
+         </div>
+         
+         <div style="padding: 20px; background: #f8f9fa;">
+           <h2 style="color: #d97706;">Order Processing Update</h2>
+          <p>Dear ${user?.firstName || ''} ${user?.lastName || ''},</p>
+          <p>Great news! Your order is now being processed and prepared for shipment.</p>
+          
+          <!-- Order Summary -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+            <h3 style="color: #d97706; margin-top: 0;">Order Details</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div>
+                <p><strong>Order ID:</strong> #${order.orderId}</p>
+                <p><strong>Order Date:</strong> ${formatDate(order.createdAt)}</p>
+                <p><strong>Status:</strong> <span style="color: #3b82f6; font-weight: bold; text-transform: uppercase;">PROCESSING</span></p>
+                <p><strong>Payment Status:</strong> <span style="color: ${order.paymentStatus === 'completed' ? '#059669' : '#f59e0b'}; font-weight: bold; text-transform: uppercase;">${order.paymentStatus}</span></p>
+              </div>
+                             <div>
+                 <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
+                 <p><strong>Total Amount:</strong> ${formatCurrency(order.grandTotal)}</p>
+                 <p><strong>Items:</strong> ${order.items.reduce((sum, item) => sum + item.quantity, 0)} items</p>
+               </div>
+            </div>
+          </div>
+          
+          <!-- Shipping Information -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+            <h3 style="color: #d97706; margin-top: 0;">Shipping Information</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+              <div>
+                <h4 style="color: #374151; margin-top: 0;">Delivery Address</h4>
+                <p style="margin: 5px 0;"><strong>${order.shippingAddress.fullName}</strong></p>
+                <p style="margin: 5px 0;">${order.shippingAddress.address}</p>
+                <p style="margin: 5px 0;">${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postalCode}</p>
+                <p style="margin: 5px 0;">${order.shippingAddress.country}</p>
+                <p style="margin: 5px 0;"><strong>Phone:</strong> ${order.shippingAddress.phone}</p>
+              </div>
+              <div>
+                <h4 style="color: #374151; margin-top: 0;">Shipping Method</h4>
+                ${order.shipping.name ? `
+                  <p style="margin: 5px 0;"><strong>Method:</strong> ${order.shipping.name}</p>
+                  <p style="margin: 5px 0;"><strong>Cost:</strong> ${formatCurrency(order.shipping.charge)}</p>
+                  <p style="margin: 5px 0;"><strong>Estimated Delivery:</strong> ${order.shipping.estimatedDays} days</p>
+                ` : '<p style="margin: 5px 0; color: #666;">Standard shipping</p>'}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Processing Status -->
+          <div style="background: #e0f2fe; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+            <h4 style="color: #1e40af; margin-top: 0;">What's happening now?</h4>
+            <ul style="color: #1e40af;">
+              <li>Your items are being carefully inspected</li>
+              <li>Quality checks are being performed</li>
+              <li>Packaging is being prepared</li>
+              <li>Shipping labels are being generated</li>
+            </ul>
+            <p style="color: #1e40af; margin-top: 15px; font-weight: bold;">
+              Estimated processing time: 1-2 business days
+            </p>
+          </div>
+
+          <!-- Order Items Summary -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #d97706; margin-top: 0;">Order Items Summary</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+              ${order.items.map(item => `
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px;">
+                  <div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 8px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; border: 1px solid #e5e7eb;">
+                    ${item.mainImage ? `<img src="${item.mainImage}" alt="${item.name}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px; max-width: 100%; max-height: 100%;">` : '<span style="color: #9ca3af; font-size: 12px;">No Image</span>'}
+                  </div>
+                  <h4 style="margin: 0 0 5px 0; font-size: 14px; color: #374151;">${item.name}</h4>
+                  <p style="margin: 3px 0; font-size: 12px; color: #6b7280;">Qty: ${item.quantity}</p>
+                  <p style="margin: 3px 0; font-size: 12px; color: #6b7280;">${formatCurrency(item.price)} each</p>
+                  ${item.size ? `<p style="margin: 3px 0; font-size: 12px; color: #6b7280;">${item.measureType || 'Size'}: ${item.size} ${item.unitName || ''}</p>` : ''}
+                  ${item.color ? `<p style="margin: 3px 0; font-size: 12px; color: #6b7280;">Color: ${item.color}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          
+          <p>We'll notify you again once your order is shipped with tracking information.</p>
+          
+          <!-- Order Tracking Link -->
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.CLIENT_URL}/profile/orders/${order.orderId}" 
+               style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+              📋 Track Order Status
+            </a>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <p style="color: #d97706; font-weight: bold;">Thank you for your patience!</p>
+          </div>
+        </div>
+        
+        <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+          <p>© ${new Date().getFullYear()} Barvella. All rights reserved.</p>
+          <p>This is an automated email. Please do not reply to this message.</p>
+        </div>
+      </div>
+    `
+  }),
+
+  orderDelivered: (order, user) => ({
+    subject: `Order Delivered - Order #${order.orderId}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 20px; text-align: center; color: white;">
+          <h1 style="margin: 0;">Barvella</h1>
+          <p style="margin: 5px 0;">Premium Fashion & Lifestyle</p>
+        </div>
+        
+        <div style="padding: 20px; background: #f8f9fa;">
+          <h2 style="color: #d97706;">Order Delivered Successfully!</h2>
+          <p>Dear ${user?.firstName || ''} ${user?.lastName || ''},</p>
+          <p>🎉 Your order has been successfully delivered! We hope you love your new items.</p>
+          
+          <!-- Order Summary -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #059669;">
+            <h3 style="color: #d97706; margin-top: 0;">Order Details</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div>
+                <p><strong>Order ID:</strong> #${order.orderId}</p>
+                <p><strong>Order Date:</strong> ${formatDate(order.createdAt)}</p>
+                <p><strong>Status:</strong> <span style="color: #059669; font-weight: bold; text-transform: uppercase;">DELIVERED</span></p>
+                <p><strong>Payment Status:</strong> <span style="color: ${order.paymentStatus === 'completed' ? '#059669' : '#f59e0b'}; font-weight: bold; text-transform: uppercase;">${order.paymentStatus}</span></p>
+              </div>
+                             <div>
+                 <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
+                 <p><strong>Total Amount:</strong> ${formatCurrency(order.grandTotal)}</p>
+                 <p><strong>Items Delivered:</strong> ${order.items.reduce((sum, item) => sum + item.quantity, 0)} items</p>
+               </div>
+            </div>
+          </div>
+          
+          <!-- Delivery Information -->
+          <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #059669;">
+            <h4 style="color: #059669; margin-top: 0;">Delivery Information</h4>
+            <p style="color: #059669; margin: 5px 0;"><strong>Delivered to:</strong> ${order.shippingAddress.fullName}</p>
+            <p style="color: #059669; margin: 5px 0;"><strong>Address:</strong> ${order.shippingAddress.address}, ${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postalCode}</p>
+            <p style="color: #059669; margin: 5px 0;"><strong>Phone:</strong> ${order.shippingAddress.phone}</p>
+            ${order.shipping.name ? `
+              <p style="color: #059669; margin: 5px 0;"><strong>Shipping Method:</strong> ${order.shipping.name}</p>
+              <p style="color: #059669; margin: 5px 0;"><strong>Shipping Cost:</strong> ${formatCurrency(order.shipping.charge)}</p>
+            ` : ''}
+            <p style="color: #059669; margin: 15px 0 0 0; font-weight: bold;">
+              Delivery completed on: ${formatDate(new Date())}
+            </p>
+          </div>
+
+          <!-- Order Items Summary -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #d97706; margin-top: 0;">Delivered Items</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+              ${order.items.map(item => `
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px;">
+                  <div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 8px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; border: 1px solid #e5e7eb;">
+                    ${item.mainImage ? `<img src="${item.mainImage}" alt="${item.name}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px; max-width: 100%; max-height: 100%;">` : '<span style="color: #9ca3af; font-size: 12px;">No Image</span>'}
+                  </div>
+                  <h4 style="margin: 0 0 5px 0; font-size: 14px; color: #374151;">${item.name}</h4>
+                  <p style="margin: 3px 0; font-size: 12px; color: #6b7280;">Qty: ${item.quantity}</p>
+                  <p style="margin: 3px 0; font-size: 12px; color: #6b7280;">${formatCurrency(item.price)} each</p>
+                  ${item.size ? `<p style="margin: 3px 0; font-size: 12px; color: #6b7280;">${item.measureType || 'Size'}: ${item.size} ${item.unitName || ''}</p>` : ''}
+                  ${item.color ? `<p style="margin: 3px 0; font-size: 12px; color: #6b7280;">Color: ${item.color}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          
+          <!-- Next Steps -->
+          <div style="background: #fefce8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+            <h4 style="color: #d97706; margin-top: 0;">What's next?</h4>
+            <ul style="color: #d97706;">
+              <li>Please inspect your items upon delivery</li>
+              <li>You have 7 days to return if needed</li>
+              <li>Share your experience with us</li>
+              <li>Consider leaving a review for your purchased items</li>
+            </ul>
+          </div>
+          
+          <!-- Quality Guarantee -->
+          <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #059669;">
+            <h4 style="color: #059669; margin-top: 0;">Quality Guarantee</h4>
+            <p style="color: #059669; margin: 0;">All our products come with a quality guarantee. If you're not completely satisfied, please contact our customer service within 7 days.</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <p style="color: #d97706; font-weight: bold;">Thank you for choosing Barvella!</p>
+            <p style="color: #666;">We hope to see you again soon.</p>
+          </div>
+          
+          <!-- Order Details Link -->
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="${process.env.CLIENT_URL}/profile/orders/${order.orderId}" 
+               style="display: inline-block; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+              📋 View Order Details
+            </a>
+          </div>
+        </div>
+        
+        <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+          <p>© ${new Date().getFullYear()} Barvella. All rights reserved.</p>
+          <p>This is an automated email. Please do not reply to this message.</p>
+        </div>
+      </div>
+    `
+  }),
+
+  orderShipped: (order, user) => ({
+    subject: `Order Shipped - Order #${order.orderId}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 20px; text-align: center; color: white;">
+          <h1 style="margin: 0;">Barvella</h1>
+          <p style="margin: 5px 0;">Premium Fashion & Lifestyle</p>
+        </div>
+        
+        <div style="padding: 20px; background: #f8f9fa;">
+          <h2 style="color: #d97706;">Your Order is on the Way! 🚚</h2>
+          <p>Dear ${user?.firstName || ''} ${user?.lastName || ''},</p>
+          <p>Great news! Your order has been shipped and is on its way to you.</p>
+          
+          <!-- Order Summary -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #8b5cf6;">
+            <h3 style="color: #d97706; margin-top: 0;">Order Details</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div>
+                <p><strong>Order ID:</strong> #${order.orderId}</p>
+                <p><strong>Order Date:</strong> ${formatDate(order.createdAt)}</p>
+                <p><strong>Status:</strong> <span style="color: #8b5cf6; font-weight: bold; text-transform: uppercase;">SHIPPED</span></p>
+                <p><strong>Payment Status:</strong> <span style="color: ${order.paymentStatus === 'completed' ? '#059669' : '#f59e0b'}; font-weight: bold; text-transform: uppercase;">${order.paymentStatus}</span></p>
+              </div>
+                             <div>
+                 <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
+                 <p><strong>Total Amount:</strong> ${formatCurrency(order.grandTotal)}</p>
+                 <p><strong>Items Shipped:</strong> ${order.items.reduce((sum, item) => sum + item.quantity, 0)} items</p>
+               </div>
+            </div>
+          </div>
+          
+          <!-- Shipping Information -->
+          <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #8b5cf6;">
+            <h4 style="color: #7c3aed; margin-top: 0;">Shipping Information</h4>
+            <p style="color: #7c3aed; margin: 5px 0;"><strong>Shipping to:</strong> ${order.shippingAddress.fullName}</p>
+            <p style="color: #7c3aed; margin: 5px 0;"><strong>Address:</strong> ${order.shippingAddress.address}, ${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postalCode}</p>
+            <p style="color: #7c3aed; margin: 5px 0;"><strong>Phone:</strong> ${order.shippingAddress.phone}</p>
+            ${order.shipping.name ? `
+              <p style="color: #7c3aed; margin: 5px 0;"><strong>Shipping Method:</strong> ${order.shipping.name}</p>
+              <p style="color: #7c3aed; margin: 5px 0;"><strong>Shipping Cost:</strong> ${formatCurrency(order.shipping.charge)}</p>
+              <p style="color: #7c3aed; margin: 5px 0;"><strong>Estimated Delivery:</strong> ${order.shipping.estimatedDays} days</p>
+            ` : ''}
+            <p style="color: #7c3aed; margin: 15px 0 0 0; font-weight: bold;">
+              Shipped on: ${formatDate(new Date())}
+            </p>
+          </div>
+
+          <!-- Order Items Summary -->
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #d97706; margin-top: 0;">Shipped Items</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+              ${order.items.map(item => `
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px;">
+                  <div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 8px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; border: 1px solid #e5e7eb;">
+                    ${item.mainImage ? `<img src="${item.mainImage}" alt="${item.name}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px; max-width: 100%; max-height: 100%;">` : '<span style="color: #9ca3af; font-size: 12px;">No Image</span>'}
+                  </div>
+                  <h4 style="margin: 0 0 5px 0; font-size: 14px; color: #374151;">${item.name}</h4>
+                  <p style="margin: 3px 0; font-size: 12px; color: #6b7280;">Qty: ${item.quantity}</p>
+                  <p style="margin: 3px 0; font-size: 12px; color: #6b7280;">${formatCurrency(item.price)} each</p>
+                  ${item.size ? `<p style="margin: 3px 0; font-size: 12px; color: #6b7280;">${item.measureType || 'Size'}: ${item.size} ${item.unitName || ''}</p>` : ''}
+                  ${item.color ? `<p style="margin: 3px 0; font-size: 12px; color: #6b7280;">Color: ${item.color}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          
+          <!-- Delivery Instructions -->
+          <div style="background: #fefce8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+            <h4 style="color: #d97706; margin-top: 0;">Delivery Instructions</h4>
+            <ul style="color: #d97706;">
+              <li>Please ensure someone is available to receive the package</li>
+              <li>Have your ID ready for verification if required</li>
+              <li>Inspect the package before signing</li>
+              <li>Contact us immediately if there are any issues</li>
+            </ul>
+          </div>
+          
+          <!-- Tracking Information -->
+          <div style="background: #e0f2fe; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+            <h4 style="color: #1e40af; margin-top: 0;">Track Your Order</h4>
+            <p style="color: #1e40af; margin: 0;">You can track your order status by logging into your account or contacting our customer service.</p>
+            <div style="text-align: center; margin-top: 15px;">
+              <a href="${process.env.CLIENT_URL}/profile/orders/${order.orderId}" 
+                 style="display: inline-block; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                🚚 Track Order
+              </a>
+            </div>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <p style="color: #d97706; font-weight: bold;">Your order is on its way!</p>
+            <p style="color: #666;">We'll notify you once it's delivered.</p>
+          </div>
+        </div>
+        
+        <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+          <p>© ${new Date().getFullYear()} Barvella. All rights reserved.</p>
+          <p>This is an automated email. Please do not reply to this message.</p>
+        </div>
+      </div>
+    `
+  })
+};
+
+// Send email function
+const sendEmail = async (to, template, data) => {
+  try {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      console.log('⚠️ Email credentials not configured. Skipping email send.');
+      return { success: false, message: 'Email credentials not configured' };
+    }
+
+    let emailContent;
+    
+    if (template === 'custom') {
+      // For custom emails (like OTP)
+      emailContent = {
+        subject: data.customSubject,
+        html: data.customHtml
+      };
+    } else if (template === 'email_update_otp') {
+      // For email update OTP
+      emailContent = {
+        subject: 'Email Update Verification - Barvella',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 30px; text-align: center; color: white; border-radius: 10px 10px 0 0;">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+                <img src="https://barvella.com/Barvella.png" alt="Barvella Logo" style="width: 60px; height: 60px; object-fit: contain;">
+                <h1 style="margin: 0;">Email Update Verification</h1>
+              </div>
+              <p style="margin: 5px 0;">Verify your new email address</p>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+              <h2 style="color: #1d4ed8; margin-top: 0;">Email Update Request</h2>
+              <p>Hello,</p>
+              <p>We received a request to update your email address to: <strong>${data.newEmail}</strong></p>
+              <p>To complete this process, please use the verification code below:</p>
+              
+              <div style="background: white; padding: 30px; border-radius: 8px; margin: 30px 0; text-align: center; border: 2px solid #3b82f6;">
+                <h1 style="color: #1d4ed8; font-size: 48px; letter-spacing: 8px; margin: 0; font-family: monospace;">${data.otp}</h1>
+                <p style="color: #6b7280; margin-top: 10px;">Verification Code</p>
+              </div>
+              
+              <div style="background: #dbeafe; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+                <h4 style="color: #1d4ed8; margin-top: 0;">Important Information</h4>
+                <ul style="color: #1d4ed8;">
+                  <li>This code will expire in 10 minutes</li>
+                  <li>If you didn't request this change, please ignore this email</li>
+                  <li>For security, you'll be logged out after updating your email</li>
+                </ul>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <p style="color: #1d4ed8; font-weight: bold;">Thank you for choosing Barvella!</p>
+                <p style="color: #6b7280;">If you have any questions, please contact our support team.</p>
+              </div>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666; border-radius: 10px; margin-top: 20px;">
+              <p>© ${new Date().getFullYear()} Barvella. All rights reserved.</p>
+              <p>This is an automated email. Please do not reply to this message.</p>
+            </div>
+          </div>
+        `
+      };
+    } else {
+      // For order emails
+      emailContent = emailTemplates[template](data.order, data.user);
+    }
+    
+    const mailOptions = {
+      from: `"Barvella" <${process.env.EMAIL_USER}>`,
+      to: to,
+      subject: emailContent.subject,
+      html: emailContent.html
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent successfully to ${to}: ${template}`);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error(`❌ Failed to send email to ${to}:`, error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+// Send order confirmation email
+const sendOrderConfirmation = async (order, user) => {
+  return await sendEmail(user.email, 'orderConfirmation', { order, user });
+};
+
+// Send order processing email
+const sendOrderProcessing = async (order, user) => {
+  return await sendEmail(user.email, 'orderProcessing', { order, user });
+};
+
+// Send order shipped email
+const sendOrderShipped = async (order, user) => {
+  return await sendEmail(user.email, 'orderShipped', { order, user });
+};
+
+// Send order delivered email
+const sendOrderDelivered = async (order, user) => {
+  return await sendEmail(user.email, 'orderDelivered', { order, user });
+};
+
+const sendOrderCancelled = async (order, user) => {
+  try {
+    const subject = `Order #${order.orderId} Cancelled`;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Order Cancelled</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #ff6b6b, #ee5a52); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .order-details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ff6b6b; }
+          .item { display: flex; gap: 15px; padding: 15px 0; border-bottom: 1px solid #eee; }
+          .item:last-child { border-bottom: none; }
+          .item-image { width: 80px; height: 80px; background: #f3f4f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #e5e7eb; }
+          .item-image img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; max-width: 100%; max-height: 100%; }
+          .item-details { flex: 1; }
+          .item-name { font-weight: bold; margin-bottom: 5px; }
+          .item-meta { color: #666; font-size: 14px; }
+          .totals { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+          .total-row { display: flex; justify-content: space-between; margin: 10px 0; }
+          .total-row.final { font-weight: bold; font-size: 18px; border-top: 2px solid #eee; padding-top: 10px; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          .cancellation-notice { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 20px 0; }
+          .cancellation-notice h3 { color: #856404; margin: 0 0 10px 0; }
+          .cancellation-notice p { color: #856404; margin: 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+                     <div class="header">
+             <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+               <img src="https://barvella.com/Barvella.png" alt="Barvella Logo" style="width: 60px; height: 60px; object-fit: contain;">
+               <h1 style="margin: 0;">Order Cancelled</h1>
+             </div>
+             <p>We're sorry to inform you that your order has been cancelled</p>
+           </div>
+          
+          <div class="content">
+            <div class="cancellation-notice">
+              <h3>⚠️ Order Cancellation Notice</h3>
+              <p>Your order #${order.orderId} has been cancelled. If you have any questions about this cancellation, please contact our customer support team.</p>
+            </div>
+            
+            <div class="order-details">
+              <h2>Order Details</h2>
+              <p><strong>Order ID:</strong> #${order.orderId}</p>
+              <p><strong>Order Date:</strong> ${formatDate(order.createdAt)}</p>
+              <p><strong>Status:</strong> <span style="color: #ff6b6b; font-weight: bold;">Cancelled</span></p>
+              <p><strong>Customer:</strong> ${user.fullName}</p>
+              <p><strong>Email:</strong> ${user.email}</p>
+            </div>
+            
+            <div class="order-details">
+              <h3>Order Items</h3>
+              ${order.items.map(item => `
+                <div class="item">
+                  <div class="item-image">
+                    ${item.mainImage ? `<img src="${item.mainImage}" alt="${item.name}">` : '<span style="color: #9ca3af;">No Image</span>'}
+                  </div>
+                  <div class="item-details">
+                    <div class="item-name">${item.name}</div>
+                    <div class="item-meta">
+                       ${item.color ? `Color: ${item.color}<br>` : ''}
+                        ${item.size ? `${item.measureType || 'Size'}: ${item.size} ${item.unitName || ''}<br>` : ''}
+                       Quantity: ${item.quantity}<br>
+                       Price: ${formatCurrency(item.price)}
+                       ${item.discountApplied > 0 ? `<br>Discount: ${formatCurrency(item.discountApplied)}` : ''}
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            
+            <div class="totals">
+              <h3>Order Summary</h3>
+              <div class="total-row">
+                <span>Subtotal:</span>
+                <span>${formatCurrency(order.totalAmount)}</span>
+              </div>
+              ${order.discountAmount > 0 ? `
+                <div class="total-row">
+                  <span>Discount:</span>
+                  <span style="color: #10b981;">-${formatCurrency(order.discountAmount)}</span>
+                </div>
+              ` : ''}
+              <div class="total-row">
+                <span>Shipping:</span>
+                <span>${formatCurrency(order.shippingCost || 0)}</span>
+              </div>
+              <div class="total-row final">
+                <span>Total:</span>
+                <span>${formatCurrency(order.grandTotal)}</span>
+              </div>
+            </div>
+            
+            <div class="order-details">
+              <h3>Shipping Information</h3>
+              <p><strong>Address:</strong></p>
+              <p>${order.shippingAddress.fullName}<br>
+              ${order.shippingAddress.address}<br>
+              ${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postalCode}<br>
+              ${order.shippingAddress.country}<br>
+              Phone: ${order.shippingAddress.phone}</p>
+              
+              ${order.shipping ? `
+                <p><strong>Shipping Method:</strong> ${order.shipping.name}</p>
+                <p><strong>Shipping Cost:</strong> ${formatCurrency(order.shipping.charge)}</p>
+                <p><strong>Estimated Delivery:</strong> ${order.shipping.estimatedDays} days</p>
+              ` : ''}
+            </div>
+            
+            <div class="order-details">
+              <h3>Payment Information</h3>
+              <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
+              <p><strong>Payment Status:</strong> ${order.paymentStatus}</p>
+            </div>
+            
+            <div class="footer">
+              <p>If you have any questions about this cancellation, please don't hesitate to contact us.</p>
+              <p>Thank you for your understanding.</p>
+            </div>
+            
+            <!-- Order Details Link -->
+            <div style="text-align: center; margin: 20px 0;">
+              <a href="${process.env.CLIENT_URL}/profile/orders/${order.orderId}" 
+                 style="display: inline-block; background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                📋 View Order Details
+              </a>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const result = await transporter.sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
+      to: user.email,
+      subject: subject,
+      html: html
+    });
+
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending order cancelled email:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+// Send order finalization email
+const sendOrderFinalization = async (order, user) => {
+  try {
+    const subject = `Order Finalized - Order #${order.orderId}`;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Order Finalized</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #059669, #047857); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .order-details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #059669; }
+          .item { display: flex; gap: 15px; padding: 15px 0; border-bottom: 1px solid #eee; }
+          .item:last-child { border-bottom: none; }
+          .item-image { width: 80px; height: 80px; background: #f3f4f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #e5e7eb; }
+          .item-image img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; max-width: 100%; max-height: 100%; }
+          .item-details { flex: 1; }
+          .item-name { font-weight: bold; margin-bottom: 5px; }
+          .item-meta { color: #666; font-size: 14px; }
+          .totals { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+          .total-row { display: flex; justify-content: space-between; margin: 10px 0; }
+          .total-row.final { font-weight: bold; font-size: 18px; border-top: 2px solid #eee; padding-top: 10px; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          .finalization-notice { background: #d1fae5; border: 1px solid #a7f3d0; padding: 15px; border-radius: 8px; margin: 20px 0; }
+          .finalization-notice h3 { color: #047857; margin: 0 0 10px 0; }
+          .finalization-notice p { color: #047857; margin: 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+                     <div class="header">
+             <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+               <img src="https://barvella.com/Barvella.png" alt="Barvella Logo" style="width: 60px; height: 60px; object-fit: contain;">
+               <h1 style="margin: 0;">Order Finalized</h1>
+             </div>
+             <p>Your order has been finalized and is ready for processing</p>
+           </div>
+          
+          <div class="content">
+            <div class="finalization-notice">
+              <h3>✅ Order Finalization Notice</h3>
+              <p>Your order #${order.orderId} has been finalized by our admin team. The order is now confirmed and will be processed for delivery.</p>
+            </div>
+            
+            <div class="order-details">
+              <h2>Order Details</h2>
+              <p><strong>Order ID:</strong> #${order.orderId}</p>
+              <p><strong>Order Date:</strong> ${formatDate(order.createdAt)}</p>
+              <p><strong>Status:</strong> <span style="color: #059669; font-weight: bold;">Finalized</span></p>
+              <p><strong>Customer:</strong> ${user.fullName}</p>
+              <p><strong>Email:</strong> ${user.email}</p>
+            </div>
+            
+            <div class="order-details">
+              <h3>Order Items</h3>
+              ${order.items.map(item => `
+                <div class="item">
+                  <div class="item-image">
+                    ${item.mainImage ? `<img src="${item.mainImage}" alt="${item.name}">` : '<span style="color: #9ca3af;">No Image</span>'}
+                  </div>
+                  <div class="item-details">
+                    <div class="item-name">${item.name}</div>
+                    <div class="item-meta">
+                       ${item.color ? `Color: ${item.color}<br>` : ''}
+                        ${item.size ? `${item.measureType || 'Size'}: ${item.size} ${item.unitName || ''}<br>` : ''}
+                       Quantity: ${item.quantity}<br>
+                       Price: ${formatCurrency(item.price)}
+                       ${item.discountApplied > 0 ? `<br>Discount: ${formatCurrency(item.discountApplied)}` : ''}
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            
+            <div class="totals">
+              <h3>Order Summary</h3>
+              <div class="total-row">
+                <span>Subtotal:</span>
+                <span>${formatCurrency(order.totalAmount)}</span>
+              </div>
+              ${order.discountAmount > 0 ? `
+                <div class="total-row">
+                  <span>Discount:</span>
+                  <span style="color: #10b981;">-${formatCurrency(order.discountAmount)}</span>
+                </div>
+              ` : ''}
+              <div class="total-row">
+                <span>Shipping:</span>
+                <span>${formatCurrency(order.shippingCost || 0)}</span>
+              </div>
+              <div class="total-row final">
+                <span>Grand Total:</span>
+                <span>${formatCurrency(order.grandTotal)}</span>
+              </div>
+            </div>
+            
+            <div class="order-details">
+              <h3>Shipping Information</h3>
+              <p><strong>Address:</strong></p>
+              <p>${order.shippingAddress.fullName}<br>
+              ${order.shippingAddress.address}<br>
+              ${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postalCode}<br>
+              ${order.shippingAddress.country}<br>
+              Phone: ${order.shippingAddress.phone}</p>
+              
+              ${order.shipping ? `
+                <p><strong>Shipping Method:</strong> ${order.shipping.name}</p>
+                <p><strong>Shipping Cost:</strong> ${formatCurrency(order.shipping.charge)}</p>
+                <p><strong>Estimated Delivery:</strong> ${order.shipping.estimatedDays} days</p>
+              ` : ''}
+            </div>
+            
+            <div class="order-details">
+              <h3>Payment Information</h3>
+              <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
+              <p><strong>Payment Status:</strong> ${order.paymentStatus}</p>
+            </div>
+            
+            <div class="footer">
+              <p>Your order is now finalized and will be processed for delivery. We'll keep you updated on the progress.</p>
+              <p>Thank you for choosing Barvella!</p>
+            </div>
+            
+            <!-- Order Details Link -->
+            <div style="text-align: center; margin: 20px 0;">
+              <a href="${process.env.CLIENT_URL}/profile/orders/${order.orderId}" 
+                 style="display: inline-block; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                📋 View Order Details
+              </a>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const result = await transporter.sendMail({
+      from: `"Barvella" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: subject,
+      html: html
+    });
+
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending order finalization email:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+module.exports = {
+  sendEmail,
+  sendOrderConfirmation,
+  sendOrderProcessing,
+  sendOrderShipped,
+  sendOrderDelivered,
+  sendOrderCancelled,
+  sendOrderFinalization
+};
