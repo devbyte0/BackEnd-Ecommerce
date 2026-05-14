@@ -18,6 +18,7 @@ const ImageSliderRoutes = require('./routes/SlidersRoute');
 const AdminRoutes = require('./routes/AdminRoutes');
 const CartRoutes = require('./routes/CartRoutes');
 const CategoriesRoutes = require('./routes/CategoriesRoutes');
+const BrandRoutes = require('./routes/BrandRoutes');
 const ColorRoutes = require('./routes/colorRoutes');
 const SizeRoutes = require('./routes/SizeRoutes');
 const GenderRoutes = require('./routes/GenderRoutes');
@@ -34,6 +35,11 @@ const InventoryRoutes = require('./routes/InventoryRoutes');
 const POSRoutes = require('./routes/POSRoutes');
 const CronRoutes = require('./routes/CronRoutes');
 const DashboardRoutes = require('./routes/DashboardRoutes');
+const PopupAdRoutes = require('./routes/popupAdRoutes');
+const EmbeddingRoutes = require('./routes/EmbeddingRoutes');
+const SeoRoutes = require('./routes/SeoRoutes');
+const { chat, history, clear } = require('./controller/AIAssistantController');
+const authenticate = require('./middleware/UserAuthMiddleware');
 
 const orderController = require('./controller/OrderController');
 const inventoryController = require('./controller/InventoryController');
@@ -66,12 +72,18 @@ app.use(express.json());
 // ==============================
 // API Routes
 // ==============================
+// AI Assistant — registered directly on app, before all routers, to avoid middleware interference
+app.post('/api/assistant/chat', authenticate, chat);
+app.get('/api/assistant/history', authenticate, history);
+app.delete('/api/assistant/clear', authenticate, clear);
+
 app.use("/api", ProductRoutes);
 app.use("/api", UserRoutes);
 app.use("/api", ImageSliderRoutes);
 app.use("/api", AdminRoutes);
 app.use("/api", CartRoutes);
 app.use("/api", CategoriesRoutes);
+app.use("/api", BrandRoutes);
 app.use('/api', ColorRoutes);
 app.use('/api', SizeRoutes);
 app.use('/api', GenderRoutes);
@@ -88,6 +100,9 @@ app.use('/api', InventoryRoutes);
 app.use('/api/pos', POSRoutes);
 app.use('/api/cron', CronRoutes);
 app.use('/api/dashboard', DashboardRoutes);
+app.use('/api', PopupAdRoutes);
+app.use('/api', EmbeddingRoutes);
+app.use('/api', SeoRoutes);
 
 // ==============================
 // Socket.IO Configuration

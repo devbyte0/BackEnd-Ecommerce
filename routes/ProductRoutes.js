@@ -13,7 +13,11 @@ const {
   updateReview,
   deleteReview,
   updateStock,
-  getStock
+  getStock,
+  toggleLike,
+  toggleWishlist,
+  getWishlist,
+  purchaseBroadcast
 } = require('../controller/productController');
 
 
@@ -68,5 +72,15 @@ router.delete('/products/varients/:id', authenticateAdmin,  deleteVariant);
 // 📦 Stock management routes
 router.get('/products/:id/stock', getStock);
 router.put('/products/:id/variants/:variantId/stock', authenticateAdmin, updateStock);
+
+// ❤️ Like / Love
+router.post('/products/:id/like', toggleLike);
+
+// ⭐ Wishlist
+router.get('/wishlist', authenticateUser, getWishlist);
+router.post('/wishlist', authenticateUser, toggleWishlist);
+
+// 📢 Live purchase broadcast (admin)
+router.post('/products/purchase-broadcast', authenticateAdmin, purchaseBroadcast);
 
 module.exports = router;

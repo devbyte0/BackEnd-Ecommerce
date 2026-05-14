@@ -501,6 +501,69 @@ const emailTemplates = {
         </div>
       </div>
     `
+  }),
+  posOrderConfirmation: (posOrder) => ({
+    subject: `Receipt - Order #${posOrder.orderNumber}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 20px; text-align: center; color: white;">
+          <img src="https://barvella.com/Barvella.png" alt="Barvella" style="width: 50px; height: 50px; object-fit: contain;">
+          <h1 style="margin: 5px 0;">Barvella</h1>
+          <p style="margin: 0;">POS Receipt</p>
+        </div>
+        <div style="padding: 20px; background: #f8f9fa;">
+          <p>Dear ${posOrder.customer.name},</p>
+          <p>Thank you for your purchase at Barvella! Here is your receipt.</p>
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #059669;">
+            <h3 style="color: #047857; margin-top: 0;">Receipt Summary</h3>
+            <p><strong>Order #:</strong> ${posOrder.orderNumber}</p>
+            <p><strong>Date:</strong> ${formatDate(posOrder.createdAt)}</p>
+            <p><strong>Payment:</strong> ${posOrder.paymentMethod}</p>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: white; border-radius: 8px; overflow: hidden;">
+            <thead>
+              <tr style="background: #059669; color: white;">
+                <th style="padding: 10px; text-align: left;">Item</th>
+                <th style="padding: 10px; text-align: center;">Qty</th>
+                <th style="padding: 10px; text-align: right;">Price</th>
+                <th style="padding: 10px; text-align: right;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${posOrder.items.map(item => `
+                <tr style="border-bottom: 1px solid #e5e7eb;">
+                  <td style="padding: 10px;">
+                    <strong>${item.productName}</strong>
+                    ${item.variantInfo?.size ? `<br><span style="font-size: 12px; color: #666;">Size: ${item.variantInfo.size}${item.variantInfo.color ? ', ' + item.variantInfo.color : ''}</span>` : ''}
+                  </td>
+                  <td style="padding: 10px; text-align: center;">${item.quantity}</td>
+                  <td style="padding: 10px; text-align: right;">${formatCurrency(item.discountPrice || item.unitPrice)}</td>
+                  <td style="padding: 10px; text-align: right;">${formatCurrency(item.totalPrice)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+              <div><p><strong>Subtotal:</strong></p></div>
+              <div style="text-align: right;"><p>${formatCurrency(posOrder.subtotal)}</p></div>
+              ${posOrder.tax > 0 ? `<div><p><strong>Tax:</strong></p></div><div style="text-align: right;"><p>${formatCurrency(posOrder.tax)}</p></div>` : ''}
+              ${posOrder.discount > 0 ? `<div><p><strong>Discount:</strong></p></div><div style="text-align: right;"><p>-${formatCurrency(posOrder.discount)}</p></div>` : ''}
+              <div style="border-top: 2px solid #059669; padding-top: 10px;"><p><strong>Total:</strong></p></div>
+              <div style="border-top: 2px solid #059669; padding-top: 10px; text-align: right;"><p><strong>${formatCurrency(posOrder.total)}</strong></p></div>
+            </div>
+          </div>
+          <div style="text-align: center; margin: 20px 0;">
+            <p style="color: #059669; font-weight: bold;">Thank you for shopping at Barvella!</p>
+            <p style="color: #666; font-size: 13px;">Visit us again at barvella.com</p>
+          </div>
+        </div>
+        <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+          <p>© ${new Date().getFullYear()} Barvella. All rights reserved.</p>
+          <p>This is an automated receipt. Please do not reply.</p>
+        </div>
+      </div>
+    `
   })
 };
 
@@ -919,6 +982,14 @@ const sendOrderFinalization = async (order, user) => {
   }
 };
 
+const sendPOSReceipt = async (posOrder) => {
+  if (!posOrder.customer?.email) {
+    console.log('⚠️ No customer email for POS order', posOrder.orderNumber);
+    return { success: false, message: 'No customer email' };
+  }
+  return await sendEmail(posOrder.customer.email, 'posOrderConfirmation', { order: posOrder, user: null });
+};
+
 module.exports = {
   sendEmail,
   sendOrderConfirmation,
@@ -926,5 +997,6 @@ module.exports = {
   sendOrderShipped,
   sendOrderDelivered,
   sendOrderCancelled,
-  sendOrderFinalization
+  sendOrderFinalization,
+  sendPOSReceipt
 };

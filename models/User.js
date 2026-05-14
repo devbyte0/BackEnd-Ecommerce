@@ -64,6 +64,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true, minlength: 6 },
   imageUrl: { type: String, required: true },
   isEmailVerified: { type: Boolean, default: false },
+  wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
   refreshToken: { type: String },
   accessTokens: [{
   token: { type: String, required: true },

@@ -46,4 +46,18 @@ router.get('/users/:userId', authenticateAdmin, userController.getUserById); // 
 router.put('/users/:userId', authenticateAdmin, userController.updateUserByAdmin); // Update user (admin only)
 router.delete('/users/:userId', authenticateAdmin, userController.deleteUserByAdmin); // Delete user (admin only)
 
+// 📋 Admin: get all customer wishlists with populated products
+router.get('/admin/wishlists', authenticateAdmin, async (req, res) => {
+  try {
+    const users = await require('../models/User').find(
+      { wishlist: { $exists: true, $ne: [] } },
+      'firstName lastName email wishlist'
+    ).populate({ path: 'wishlist', select: 'name mainPrice discountPrice mainImage brand categories averageRating' }).sort({ createdAt: -1 }).lean();
+    const filtered = users.filter(u => Array.isArray(u.wishlist) && u.wishlist.length > 0);
+    res.json(filtered);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch wishlists', error: err.message });
+  }
+});
+
 module.exports = router;

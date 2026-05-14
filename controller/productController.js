@@ -1,7 +1,9 @@
 const Product = require('../models/Product');
+const User = require('../models/User');
 const cloudinary = require('../config/coudinaryconfig');
 const mongoose = require('mongoose');
 const Shipping = require('../models/Shipping');
+const seoService = require('../utils/seoService');
 
 // Socket.io instance (set from server.js)
 let ioInstance = null;
@@ -57,6 +59,8 @@ const addProduct = async (req, res) => {
     const newProduct = new Product({
       name: req.body.name,
       categories: req.body.categories,
+      brand: req.body.brand,
+      broadcast: req.body.broadcast === 'true' || req.body.broadcast === true,
       mainPrice: req.body.mainPrice,
       discountPrice: req.body.discountPrice,
       mainBadgeName: req.body.mainBadgeName,
@@ -111,6 +115,9 @@ const addProduct = async (req, res) => {
 
     await newProduct.save();
     
+    // Auto-generate SEO in background
+    seoService.generateSEO(newProduct).catch(err => console.error('SEO gen error:', err));
+    
     // Emit product creation event
     emitProductUpdate(newProduct._id, 'product_created', {
       product: newProduct
@@ -159,6 +166,8 @@ const updateProduct = async (req, res) => {
 
     product.name = req.body.name || product.name;
     product.categories = req.body.categories || product.categories;
+    product.brand = req.body.brand || product.brand;
+    if (req.body.broadcast !== undefined) product.broadcast = req.body.broadcast === 'true' || req.body.broadcast === true;
     product.mainPrice = req.body.mainPrice || product.mainPrice;
     product.discountPrice = req.body.discountPrice || product.discountPrice;
     product.mainBadgeName = req.body.mainBadgeName || product.mainBadgeName;
@@ -236,6 +245,9 @@ const updateProduct = async (req, res) => {
     }));
 
     await product.save();
+    
+    // Auto-regenerate SEO in background
+    seoService.generateSEO(product).catch(err => console.error('SEO gen error:', err));
     
     // Emit product update event
     emitProductUpdate(product._id, 'product_updated', {
@@ -581,6 +593,89 @@ async function getStock(req, res) {
   }
 }
 
+// ======================
+// Like / Love a product
+// ======================
+async function toggleLike(req, res) {
+  try {
+    const { id } = req.params;
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    product.likesCount = (product.likesCount || 0) + 1;
+    await product.save();
+
+    if (ioInstance) {
+      ioInstance.to(`product_${id}`).emit('productUpdate', {
+        productId: id,
+        updateType: 'like',
+        likesCount: product.likesCount
+      });
+    }
+
+    res.json({ likesCount: product.likesCount });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to update like', error: error.message });
+  }
+}
+
+// ======================
+// Wishlist (Auth Required)
+// ======================
+async function toggleWishlist(req, res) {
+  try {
+    const userDoc = await User.findById(req.user.id);
+    if (!userDoc) return res.status(404).json({ message: 'User not found' });
+
+    const { productId } = req.body;
+    if (!productId) return res.status(400).json({ message: 'Product ID required' });
+
+    const idx = userDoc.wishlist.findIndex(p => p.toString() === productId);
+    if (idx > -1) {
+      userDoc.wishlist.splice(idx, 1);
+      await userDoc.save();
+      return res.json({ wishlisted: false, wishlist: userDoc.wishlist });
+    }
+
+    userDoc.wishlist.push(productId);
+    await userDoc.save();
+    res.json({ wishlisted: true, wishlist: userDoc.wishlist });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to update wishlist', error: error.message });
+  }
+}
+
+async function getWishlist(req, res) {
+  try {
+    const userDoc = await User.findById(req.user.id).populate('wishlist');
+    if (!userDoc) return res.status(404).json({ message: 'User not found' });
+    res.json(userDoc.wishlist);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to get wishlist', error: error.message });
+  }
+}
+
+// ======================
+// Live purchase broadcast
+// ======================
+async function purchaseBroadcast(req, res) {
+  try {
+    const { productId, productName } = req.body;
+    if (!productId || !productName) return res.status(400).json({ message: 'Product ID and name required' });
+
+    if (ioInstance) {
+      ioInstance.emit('livePurchase', {
+        productId,
+        productName,
+        timestamp: new Date()
+      });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to broadcast', error: error.message });
+  }
+}
+
 // Set Socket.IO instance
 const setSocketIO = (io) => {
   ioInstance = io;
@@ -599,5 +694,9 @@ module.exports = {
   deleteReview,
   updateStock,
   getStock,
+  toggleLike,
+  toggleWishlist,
+  getWishlist,
+  purchaseBroadcast,
   setSocketIO
 };

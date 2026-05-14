@@ -532,6 +532,49 @@ exports.generatePrintCodes = catchAsyncErrors(async (req, res, next) => {
   });
 });
 
+// Restock inventory items (reset assigned to 0, make active)
+exports.restockInventory = catchAsyncErrors(async (req, res, next) => {
+  const { items } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return next(new ErrorHandler('Please provide items array with {id, quantity}', 400));
+  }
+
+  const results = [];
+
+  for (const { id, quantity } of items) {
+    if (!id || !quantity || quantity <= 0) {
+      results.push({ id, status: 'skipped', reason: 'Invalid id or quantity' });
+      continue;
+    }
+
+    const inventory = await Inventory.findById(id);
+    if (!inventory) {
+      results.push({ id, status: 'failed', reason: 'Inventory item not found' });
+      continue;
+    }
+
+    inventory.assignedQuantity = 0;
+    inventory.stockQuantity = quantity;
+    await inventory.save();
+
+    results.push({
+      id,
+      status: 'success',
+      stockQuantity: inventory.stockQuantity,
+      availableQuantity: inventory.availableQuantity,
+      assignedQuantity: inventory.assignedQuantity,
+      status: inventory.status
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `Restocked ${results.filter(r => r.status === 'success').length} items`,
+    results
+  });
+});
+
 // Get multiple inventory items by IDs (for batch viewing)
 exports.getInventoryBatch = catchAsyncErrors(async (req, res, next) => {
   const { ids } = req.query;

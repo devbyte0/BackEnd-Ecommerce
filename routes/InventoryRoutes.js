@@ -12,7 +12,8 @@ const {
   bulkCreateFromProduct,
   bulkCreate,
   generatePrintCodes,
-  getInventoryBatch
+  getInventoryBatch,
+  restockInventory
 } = require('../controller/InventoryController');
 
 const { authenticateAdmin } = require('../middleware/AdminAuthMiddleware');
@@ -55,5 +56,8 @@ router.post('/inventory/bulk', bulkCreate);
 
 // Generate barcode/QR code for printing
 router.post('/inventory/print-codes', generatePrintCodes);
+
+// Restock inventory
+router.post('/inventory/restock', restockInventory);
 
 module.exports = router;

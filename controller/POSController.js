@@ -3,6 +3,7 @@ const Inventory = require('../models/Inventory');
 const Product = require('../models/Product');
 const catchAsyncErrors = require('../middleware/catchAsyncErrors');
 const ErrorHandler = require('../utils/errorHandler');
+const { sendPOSReceipt } = require('../utils/emailService');
 
 // Generate unique POS order number
 async function generatePOSOrderNumber() {
@@ -85,6 +86,33 @@ exports.createPOSOrder = catchAsyncErrors(async (req, res, next) => {
         lastUpdated: new Date()
       }
     );
+  }
+
+  // Broadcast live purchase via socket
+  try {
+    const io = req.app.get('socketio');
+    if (io) {
+      for (const item of items) {
+        const prod = await Product.findById(item.productId).select('name');
+        if (prod) {
+          io.emit('livePurchase', {
+            productId: item.productId,
+            productName: prod.name || item.productName,
+            quantity: item.quantity,
+            timestamp: new Date()
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to broadcast purchase:', e.message);
+  }
+
+  // Send receipt email (non-blocking)
+  if (posOrder.customer?.email) {
+    sendPOSReceipt(posOrder).catch(err => {
+      console.error('Failed to send POS receipt email:', err.message);
+    });
   }
 
   res.status(201).json({
